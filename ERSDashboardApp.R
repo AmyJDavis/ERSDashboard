@@ -89,13 +89,13 @@ options(shiny.maxRequestSize = 30*1024^2)
 
 ###
 ## Read in the ORV and preprocessed county ERS shapefiles
-orv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/Data checking/CY2023ORV_merged.shp")
+orv=read_sf("www/CY2023ORV_merged.shp")
 orv=st_transform(orv,crs=("+proj=longlat +datum=WGS84"))
 
 orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
 
 # ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/ORV shapefiles/ctyorv.shp")
-ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/Data checking/ERS Dashboard/www/ctyallERSv1.shp")
+ctyorv=read_sf("www/ctyallERSv1.shp")
 ctyorv=st_transform(ctyorv,crs="+proj=longlat +datum=WGS84")
 ctyorv$FIPS=paste0(ctyorv$STATEFP,ctyorv$COUNTYFP)
 
