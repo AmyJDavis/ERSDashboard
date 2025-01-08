@@ -120,7 +120,14 @@ ersdata$StateName=rabiestates[match(ersdata$STATE,rabiestates$StateAbb),"StateNa
 ersdata$STCO=tolower(paste(ersdata$StateName,ersdata$COUNTY,sep=","))
 ersdata$Points=ersnames[match(ersdata$ERSCATEGORY,ersnames$Num),"Points"]
 
-
+# Just county information for genetics plotting
+uscd=sf::read_sf("www/cb_2018_us_county_5m.shp")
+uscd=uscd[which(uscd$STATEFP%in%rabiestates$Fips),]
+uscd$STATEID=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"Fips"]
+uscd$STATE_NAME=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"StateName"]
+uscd$FIPS=paste0(uscd$STATEFP,uscd$COUNTYFP)
+uscd=sf::st_transform(uscd,crs="+proj=longlat +datum=WGS84")
+uscd$STCO=paste(tolower(uscd$STATE_NAME),tolower(uscd$NAME),sep=",")
 
 ## Get points
 ### Calculating points from our data
