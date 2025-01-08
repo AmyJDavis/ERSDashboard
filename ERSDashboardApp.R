@@ -337,7 +337,7 @@ ui <- dashboardPage(
                      radioButtons(inputId = "ShowPts",label = "Display surveillance sample locations?",
                                   choices = c("Yes","No"),selected="No")),
     conditionalPanel(condition = 'input.tabs=="gentab"',
-                     tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Mapping options",align='left'),
+                     tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Genetic mapping options",align='left'),
                      radioButtons(inputId = "mapheatgen",label = "Show density of genetic samples or county assessment?",
                                   choices = c("Heatmap","County assessment","Neither"),selected = "County assessment"),
                      radioButtons(inputId = "ShowPtsgen",label = "Display genetic sample locations?",
@@ -412,7 +412,7 @@ ui <- dashboardPage(
                 tabPanel(title = "Genetics Samples",value="gentab",icon = icon("dna"),
                          box(width=12,title=span("Genetic data",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # 
-                             column(11,p("Matt Hopken is able to use genetic data to determine population structure of raccoons which helps determine raccoon movement and identify translocation events. ",style="font-size:130%;"),
+                             column(11,p("Matt Hopken is able to use genetic data to determine population structure of raccoons which helps determine raccoon movement and identify translocation events. This section can include any type of discriptors that we want. The points are color coded for if they are preprocessed samples (i.e., from the file Matt provided) and the samples that say new are any sample from the ERS data that had DNASample equalling YES.  We can make other classifiers in there. We can do a lot of different things with the plots. Currently the map just looks like the ERS map but with only the genetic data. I set a target number of genetic samples of 10 for each county just to start, which is obviously simplistic and does not consider areas of higher interest. Play around with this and think about what would changes would be helpful.",style="font-size:130%;"),
                              )
                          ),
                          box(width=12,title=span("Summary stats of genetic samples",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
@@ -421,7 +421,8 @@ ui <- dashboardPage(
                              # 
                              # Dynamic valueBoxes
                              valueBoxOutput("gensampsprev"),
-                             valueBoxOutput("gensampsnow")
+                             valueBoxOutput("gensampsnow"),
+                             valueBoxOutput("genneeded")
                          ),
                          column(width=7,box(width=6.8,title=span("Map of genetic samples",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                                             withSpinner(leafletOutput(outputId = "mapgen",height = 600),color = "#0C1936"),
@@ -871,6 +872,9 @@ server <- function(input, output,session) {
   })
   
   
+  
+  
+  
   ######
   ###
   ### Genetic tab elements
@@ -878,7 +882,7 @@ server <- function(input, output,session) {
   ######
   output$gensampsprev <- renderValueBox({
     if(input$staten!=" "){
-      gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==inputstaten),"StateAbb"]),]
+      gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
     }
     ctypre=dim(gen)[1]
     valueBox(
@@ -906,6 +910,26 @@ server <- function(input, output,session) {
     )
   })
   
+  
+  ## Box for the needed samples
+  output$genneeded <- renderValueBox({
+    if(input$staten!=" "){
+      gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+    }
+    gencounty=gen|>
+      group_by(COUNTY)%>%
+      summarise(PreSamples=length(which(Sample=="Processed")), 
+                NewSamples=length(which(Sample=="New")), 
+                Needed=ifelse((10-n())>0,10-n(),0))
+    ndcyt=sum(gencounty$Needed)
+    
+    valueBox(
+      value=ndcyt,subtitle= "# genetics samples needed", 
+      icon = icon("person-hiking"),
+      color = "fuchsia"
+    )
+  })
+  
   ####
   ### Map issues tab components
   ####
@@ -926,9 +950,6 @@ server <- function(input, output,session) {
     gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = ("+proj=longlat +datum=WGS84"))
     
     ## Combine the county shapefile and the genetic points data
-    gencty=st_intersects(gensf,uscd1)
-    gensf$Countyin=gsub("\\.","",toupper(uscd1$NAME[unlist(gencty)]))
-    
     ctygen=st_intersects(uscd1,gensf)
     uscd1$GenPts=sapply(ctygen,length)
     uscd1$PtLevs=ifelse(uscd1$GenPts==0,0,
@@ -948,6 +969,8 @@ server <- function(input, output,session) {
     KernelDensityRasterg@data@values[which(KernelDensityRasterg@data@values < 0.02)] <- NA
     palRasterg <- colorBin("RdGy",reverse = TRUE, bins = 10, domain = KernelDensityRasterg@data@values, na.color = "transparent")
     
+    bboxg <- st_bbox(statmap1) %>% 
+      as.vector()
     #
     labelsgencty <- paste(
       "<b>", uscd1$NAME,"County","</b>",
@@ -958,10 +981,11 @@ server <- function(input, output,session) {
     ### Get leaflet basemap for genetics
     g2=leaflet() %>% 
       addTiles()%>%
+      addPolygons(data=uscd1$geometry,color = "black",weight=0.7,fillOpacity = 0)|>
       addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
       addPolygons(data = orvhatch,color = "black",fillColor = "grey",fillOpacity = 0.3,opacity = 0.9,weight = 1.5)%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",fillOpacity = 0,opacity = 0.9,weight = 1.5)%>%
-      fitBounds(bboxa[1], bboxa[2], bboxa[3], bboxa[4])
+      fitBounds(bboxg[1], bboxg[2], bboxg[3], bboxg[4])
     
     
     
@@ -997,7 +1021,9 @@ server <- function(input, output,session) {
         addCircleMarkers(
           data = gensf,
           color = ifelse(gensf$Sample=="New","red","black"),
-          popup = ~get_genetic_popup_content(gensf),opacity = 0.9,radius = 0.05)
+          popup = ~get_genetic_popup_content(gensf),opacity = 0.9,radius = 0.05)|>
+        addLegend("topright",colors=c("red","black"),labels=c("New","Preprocessed"),
+                  title="Genetics samples",opacity=1)
     }
     
     g2
@@ -1012,7 +1038,35 @@ server <- function(input, output,session) {
   })
   
   
+  ## Summary table by county for genetic samples
+  output$tablegen <- renderDataTable({
+    
+    statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
+    uscd1=uscd
+    
+    ### Reduce data to state of interest
+    if(input$staten!=" "){
+      gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      statmap1=statmaps[statmaps$STATE_NAME==input$staten,]
+      uscd1=uscd[uscd$STATE_NAME==input$staten,]
+    }
+    
+    
+    ## Summarizing data by county-tier designation
+    gencounty=gen|>
+      group_by(COUNTY)%>%
+      summarise(Prepro_Samples=length(which(Sample=="Processed")),
+                New_Samples=length(which(Sample=="New")),
+                Needed=ifelse((10-n())>0,10-n(),0))
+    
+    gencounty
+    
+  })
   
+  
+  
+  ############
+  ###
   ### Download data button information for report
   output$reportX <- downloadHandler(
     # For PDF output, change this to "report.pdf"
