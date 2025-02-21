@@ -6,7 +6,7 @@
 ###   - Using the actual update ERS area!!! Sent from Jordona 11/20/2024
 ###
 ### Amy J Davis
-### June 6, 2024, updated November 20, 2024
+### June 6, 2024, updated January 8, 2025
 ###
 ########################################################################
 ########################################################################
@@ -26,7 +26,6 @@ library(leaflet)
 library(leaflegend)
 library(readxl)
 library(tidyverse)
-#library(tigris)
 library(shinycssloaders)
 library(htmltools)
 library(reshape2)
@@ -62,7 +61,9 @@ get_genetic_popup_content <- function(gensf) {
     "<br>",
     "<br>Species: ", gensf$SPECIES,
     "<br>County in record: ", gensf$COUNTY,
-    "<br>Sample source: ",gensf$Sample)
+    "<br>Sample source: ",gensf$Sample,
+    "<br>Fate: ",gensf$FATE,
+    "<br>Method: ",gensf$METHOD)
 }
 
 col_types=c('date','text','text','text','text','text','text','text','text','text','text','text','date','text','numeric','text','text','text',
@@ -87,19 +88,20 @@ options(shiny.maxRequestSize = 30*1024^2)
 
 
 ###
-## Read in the ORV and preprocessed county ERS shapefiles
+## Read in the ORV and Archived county ERS shapefiles
 orv=read_sf("www/CY2023ORV_merged.shp")
-orv=st_transform(orv,crs=("+proj=longlat +datum=WGS84"))
+orv=st_transform(orv,crs=4326)
 
 orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
 
 # ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/ORV shapefiles/ctyorv.shp")
-ctyorv=read_sf("www/ctyallERSv1.shp")
-ctyorv=st_transform(ctyorv,crs="+proj=longlat +datum=WGS84")
+ctyorv=read_sf("www/ctyallERSv2.shp")
+ctyorv=st_transform(ctyorv,crs=4326)
 ctyorv$FIPS=paste0(ctyorv$STATEFP,ctyorv$COUNTYFP)
 
 ## Read in the current dataset 
-ersdata <- read_excel("www/2023_Complete_ERS.xlsx",col_types = col_types)
+#ersdata <- read_excel("www/2023_Complete_ERS.xlsx",col_types = col_types)
+ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
 ersdata$DATE2=as.POSIXct(ersdata$DATE,format="%Y-%m-%d")
 ## If the ERSCATEGORY has been left blank, this will take the information from the FREETEXT
 ersdata$ERSCATEGORY=ifelse(is.na(ersdata$ERSCATEGORY)|ersdata$ERSCATEGORY=="null",gsub("\\;.*","",ersdata$FREETEXT),ersdata$ERSCATEGORY)
@@ -118,21 +120,24 @@ ersdata$COUNTY[ersdata$COUNTY=="LA SALLE"&ersdata$STATE=="LA"]="LASALLE"
 ersdata$StateName=rabiestates[match(ersdata$STATE,rabiestates$StateAbb),"StateName"]
 ersdata$STCO=tolower(paste(ersdata$StateName,ersdata$COUNTY,sep=","))
 ersdata$Points=ersnames[match(ersdata$ERSCATEGORY,ersnames$Num),"Points"]
+ersdata=ersdata[which(ersdata$SPECIES=="RACCOONS"),]
 
 # Just county information for genetics plotting
 uscd=sf::read_sf("www/cb_2018_us_county_5m.shp")
+uscd=st_transform(uscd,crs=4326)
 uscd=uscd[which(uscd$STATEFP%in%rabiestates$Fips),]
 uscd$STATEID=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"Fips"]
 uscd$STATE_NAME=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"StateName"]
 uscd$FIPS=paste0(uscd$STATEFP,uscd$COUNTYFP)
-uscd=sf::st_transform(uscd,crs="+proj=longlat +datum=WGS84")
+uscd=sf::st_transform(uscd,crs=4326)
 uscd$STCO=paste(tolower(uscd$STATE_NAME),tolower(uscd$NAME),sep=",")
+uscd$HighPriority=rbinom(dim(uscd)[1],1,0.05)
 
 ## Get points
 ### Calculating points from our data
 ## Need to calculate the points overlapping with polygons as counties are split
 ##  between high and low priority areas
-erssf=st_as_sf(ersdata[which(!is.na(ersdata$LONGITUDE)),],coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+erssf=st_as_sf(ersdata[which(!is.na(ersdata$LONGITUDE)),],coords = c("LONGITUDE","LATITUDE"),crs=4326)
 
 ## Trying a join 
 sf_use_s2(FALSE)
@@ -156,8 +161,6 @@ NRMPcounty=pwp%>%st_drop_geometry%>%
 ###
 ########
 ## ERS area by county tier information
-ctyorv=ctyorv%>%
-  mutate(StCtyTier=paste(STUSPS,CtyTier,sep="-"))
 ctypts=left_join(ctyorv,NRMPcounty,by=c("StCtyTier"))
 ctypts=ctypts%>%
   mutate(Pts=replace_na(Pts,0),
@@ -176,7 +179,8 @@ ctypts=ctypts%>%
 ### Get new genetic samples from the ERS data
 # Starting simple only DNASAMPLE==YES
 ersgen=ersdata|>filter(DNASAMPLE=="YES")|>
-  dplyr::select(DATE,STATE,COUNTY,LATITUDE,LONGITUDE,SPECIES,IDNUMBER,SEX,RELATIVEAGE)|>
+  dplyr::select(DATE,STATE,COUNTY,LATITUDE,LONGITUDE,SPECIES,IDNUMBER,SEX,
+                RELATIVEAGE,FATE,METHOD)|>
   mutate(Sample="New")
 
 
@@ -184,7 +188,9 @@ ersgen=ersdata|>filter(DNASAMPLE=="YES")|>
 gen=read.csv("www/GeneticsDataFromMatt.csv")
 gen=gen[!is.na(gen$LONGITUDE),]
 gen$DATE=as.POSIXct(gen$DATE,format="%m/%d/%Y")
-gen$Sample="Processed"
+gen$FATE=" "
+gen$METHOD=" "
+gen$Sample="Archived"
 gen=rbind(gen,ersgen)
 
 ## State maps
@@ -418,7 +424,7 @@ ui <- dashboardPage(
                 tabPanel(title = "Genetics Samples",value="gentab",icon = icon("dna"),
                          box(width=12,title=span("Genetic data",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # 
-                             column(11,p("Matt Hopken is able to use genetic data to determine population structure of raccoons which helps determine raccoon movement and identify translocation events. This section can include any type of discriptors that we want. The points are color coded for if they are preprocessed samples (i.e., from the file Matt provided) and the samples that say new are any sample from the ERS data that had DNASample equalling YES.  We can make other classifiers in there. We can do a lot of different things with the plots. Currently the map just looks like the ERS map but with only the genetic data. I set a target number of genetic samples of 10 for each county just to start, which is obviously simplistic and does not consider areas of higher interest. Play around with this and think about what would changes would be helpful.",style="font-size:130%;"),
+                             column(11,p("Matt Hopken is able to use genetic data to determine population structure of raccoons which helps determine raccoon movement and identify translocation events. This section can include any type of discriptors that we want. The points are color coded for if they are previously archived samples (i.e., from the file Matt provided) and the samples that say new are any sample from the ERS data that had DNASample equalling YES.  We can make other classifiers in there. We can do a lot of different things with the plots. Currently the map just looks like the ERS map but with only the genetic data. I set a target number of genetic samples of 10 for each county just to start, which is obviously simplistic and does not consider areas of higher interest. Play around with this and think about what would changes would be helpful.",style="font-size:130%;"),
                              )
                          ),
                          box(width=12,title=span("Summary stats of genetic samples",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
@@ -445,20 +451,20 @@ ui <- dashboardPage(
 # Define server logic required to draw a histogram
 server <- function(input, output,session) {
   
-  ### Update state input based on what states are available
-  observe({
-    states=state.name[which(state.abb%in%unique(ersdata$STATE))]
-    # Can use character(0) to remove all choices
-    if (is.null(states))
-      states <- character(0)
-    states=c(" ",states)
-    # Can also set the label and select items
-    updateSelectInput(session, "staten",
-                      label = "Select a State",
-                      choices = states,
-                      selected = head(states, 1)
-    )
-  })
+  # ### Update state input based on what states are available
+  # observe({
+  #   states=state.name[which(state.abb%in%unique(ersdata$STATE))]
+  #   # Can use character(0) to remove all choices
+  #   if (is.null(states))
+  #     states <- character(0)
+  #   states=c(" ",states)
+  #   # Can also set the label and select items
+  #   updateSelectInput(session, "staten",
+  #                     label = "Select a State",
+  #                     choices = states,
+  #                     selected = head(states, 1)
+  #   )
+  # })
   
   
   ####
@@ -482,7 +488,7 @@ server <- function(input, output,session) {
     loccols=turbo(7)[as.numeric(df$ERSCATEGORY)]
     
     ## Get spatial ERS data
-    dfsp=st_as_sf(df,coords = c('LONGITUDE', 'LATITUDE'),crs = ("+proj=longlat +datum=WGS84"))
+    dfsp=st_as_sf(df,coords = c('LONGITUDE', 'LATITUDE'),crs = 4326)
     
     ##  Heatmap setup
     ## Create kernel density output
@@ -505,6 +511,7 @@ server <- function(input, output,session) {
     labelscty <- paste(
       "<b>", ctypts1$NAME,"County","</b>",
       "<br>Tier: ",ctypts1$TierName,
+      "<br>Subset: ",ctypts1$Subset,
       "<br>Point Goal: ", ctypts1$PTGoal,
       "<br>Points: ", ctypts1$Pts) %>%
       lapply(htmltools::HTML)
@@ -512,8 +519,28 @@ server <- function(input, output,session) {
     bboxa <- st_bbox(statmap1) %>% 
       as.vector()
     
-    l2=leaflet() %>% 
-      addTiles()%>%
+    ### Get leaflet basemap for genetics
+    basemap <- leaflet() %>%
+      # add different provider tiles
+      addProviderTiles(
+        "OpenStreetMap",
+        # give the layer a name
+        group = "OpenStreetMap"
+      ) %>%
+      addProviderTiles(
+        "Esri.WorldImagery",
+        group = "Esri.WorldImagery"
+      ) %>%
+      # add a layers control
+      addLayersControl(
+        baseGroups = c(
+          "OpenStreetMap", "Esri.WorldImagery"
+        ),
+        # position it on the topleft
+        position = "topleft"
+      )
+    
+    l2= basemap|>
       addPolygons(data=ctypts1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
       addPolygons(data = orvhatch,color = "black",fillColor = "grey",fillOpacity = 0.3,opacity = 0.9,weight = 1.5)%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",fillOpacity = 0,opacity = 0.9,weight = 1.5)%>%
@@ -608,7 +635,7 @@ server <- function(input, output,session) {
     
     ## Need to calculate the points overlapping with polygons as counties are split
     ##  between high and low priority areas
-    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
     
     ## Trying a join 
     pwp=st_join(dfsf,scd1)
@@ -634,10 +661,10 @@ server <- function(input, output,session) {
                               as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
     
     
-    dast=scd1%>%st_drop_geometry()%>%dplyr::select(STATE_NAME,NAME,TierName,Point_Goal,Points,Points_Needed)%>%
+    dast=scd1%>%st_drop_geometry()%>%dplyr::select(STATE_NAME,NAME,TierName,Subset,Point_Goal,Points,Points_Needed)%>%
       filter(Points_Needed!="Goal met")%>%
       arrange(STATE_NAME,NAME,TierName)
-    names(dast)=c("State","County","ERS_Tier","Point_Goal","Points","Points_Needed")
+    names(dast)=c("State","County","ERS_Tier","Subset","Point_Goal","Points","Points_Needed")
     dast
     
   })
@@ -670,7 +697,7 @@ server <- function(input, output,session) {
     
     ## Need to calculate the points overlapping with polygons as counties are split
     ##  between high and low priority areas
-    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
     
     ## Trying a join 
     pwp=st_join(dfsf,scd1)
@@ -724,7 +751,7 @@ server <- function(input, output,session) {
     
     ## Need to calculate the points overlapping with polygons as counties are split
     ##  between high and low priority areas
-    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
     
     ## Trying a join 
     pwp=st_join(dfsf,scd1)
@@ -825,7 +852,7 @@ server <- function(input, output,session) {
     
     ## Need to calculate the points overlapping with polygons as counties are split
     ##  between high and low priority areas
-    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
     
     ## Trying a join 
     pwp=st_join(dfsf,scd1)
@@ -953,7 +980,15 @@ server <- function(input, output,session) {
       uscd1=uscd[uscd$STATE_NAME==input$staten,]
     }
     
-    gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = ("+proj=longlat +datum=WGS84"))
+    # if(staten!=" "){
+    #   gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==staten),"StateAbb"]),]
+    #   statmap1=statmaps[statmaps$STATE_NAME==staten,]
+    #   uscd1=uscd[uscd$STATE_NAME==staten,]
+    # }
+    
+    gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = 4326)
+    uscd1=st_transform(uscd1,crs = 4326)
+    statmap1=st_transform(statmap1,crs=4326)
     
     ## Combine the county shapefile and the genetic points data
     ctygen=st_intersects(uscd1,gensf)
@@ -985,14 +1020,19 @@ server <- function(input, output,session) {
       lapply(htmltools::HTML)
     
     ### Get leaflet basemap for genetics
-    g2=leaflet() %>% 
-      addTiles()%>%
+    g2= leaflet()|>
+      addTiles(group="OpenStreetMap")|>
+      addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")|>
       addPolygons(data=uscd1$geometry,color = "black",weight=0.7,fillOpacity = 0)|>
-      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
-      addPolygons(data = orvhatch,color = "black",fillColor = "grey",fillOpacity = 0.3,opacity = 0.9,weight = 1.5)%>%
-      addPolygons(data = orv$geometry,color = "black",fillColor = "grey",fillOpacity = 0,opacity = 0.9,weight = 1.5)%>%
+      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)|>
+      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+                  fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
+                  fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addLayersControl(baseGroups = c("OpenStreetMap","Esri.WorldImagery"),
+                       overlayGroups=c("Show ORV"), 
+                       options = layersControlOptions(collapsed = FALSE))|>
       fitBounds(bboxg[1], bboxg[2], bboxg[3], bboxg[4])
-    
     
     
     if(input$mapheatgen=="Heatmap"){
@@ -1009,11 +1049,11 @@ server <- function(input, output,session) {
     if(input$mapheatgen=="County assessment"){
       g2=g2%>%
         addPolygons(data = uscd1, 
-                    color = "black",
+                    color = c("black","red")[uscd1$HighPriority+1],
                     opacity = 0.9,
                     fillOpacity = 0.7,
                     fillColor = viridis(5,option="E")[uscd1$PtLevs+1],
-                    weight  = 0.25,
+                    weight  = c(0.25,2)[uscd1$HighPriority+1],
                     label =   ~labelsgencty)%>%
         addLegend_decreasing("topright", colors = rev(viridis(5,option="E")),
                              labels = c(">30 samples","10-29 samples","4-9 samples","1-3 samples","No samples"),
@@ -1028,7 +1068,7 @@ server <- function(input, output,session) {
           data = gensf,
           color = ifelse(gensf$Sample=="New","red","black"),
           popup = ~get_genetic_popup_content(gensf),opacity = 0.9,radius = 0.05)|>
-        addLegend("topright",colors=c("red","black"),labels=c("New","Preprocessed"),
+        addLegend("topright",colors=c("red","black"),labels=c("New","Archived"),
                   title="Genetics samples",opacity=1)
     }
     
