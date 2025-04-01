@@ -4,14 +4,13 @@
 ### Shiny app for Rabies quarterly reports as a dashboard
 ###   - This version uses the ERS area instead of county boundaries only to show point needs
 ###   - Using the actual update ERS area!!! Sent from Jordona 11/20/2024
+###   - This version include many tab options for beta testing
 ###
 ### Amy J Davis
-### June 6, 2024, updated January 8, 2025
+### June 6, 2024, updated February 25, 2025
 ###
 ########################################################################
 ########################################################################
-
-
 
 ###  Details of this app
 ###  This app will be a visualization of ERS samples by state, location, and category
@@ -44,6 +43,9 @@ library(KernSmooth)
 library(patchwork)
 require(tigris)
 library(bslib)
+library(ggrepel)
+library(plotly)
+
 
 get_popup_content <- function(dfsp) {
   paste0(
@@ -65,6 +67,25 @@ get_genetic_popup_content <- function(gensf) {
     "<br>Fate: ",gensf$FATE,
     "<br>Method: ",gensf$METHOD)
 }
+addLegendCustom <- function(map, colors, labels, sizes, shapes, borders, opacity = 0.5){
+  
+  make_shapes <- function(colors, sizes, borders, shapes) {
+    shapes <- gsub("circle", "50%", shapes)
+    shapes <- gsub("square", "0%", shapes)
+    paste0(colors, "; width:", sizes, "px; height:", sizes, "px; border:3px solid ", borders, "; border-radius:", shapes)
+  }
+  make_labels <- function(sizes, labels) {
+    paste0("<div style='display: inline-block;height: ", 
+           sizes, "px;margin-top: 4px;line-height: ", 
+           sizes, "px;'>", labels, "</div>")
+  }
+  
+  legend_colors <- make_shapes(colors, sizes, borders, shapes)
+  # I added my modification here, see below
+  legend_labels <- make_labels(sizes, labels)
+  
+  return(addLegend(map, colors = legend_colors, labels = legend_labels, opacity = opacity))
+}
 
 col_types=c('date','text','text','text','text','text','text','text','text','text','text','text','date','text','numeric','text','text','text',
             'numeric','numeric','text','text','text','text','text','text','text','text','text','text','text','text','text','text','text','text',
@@ -81,6 +102,11 @@ rabiestates$Fips=tidycensus::fips_codes[match(rabiestates$StateAbb,tidycensus::f
 
 ### Color palette options
 classcolors=c("#034521","#F2EFE9","#353264","#5456AA","#7084E5","white","#FFF7E1","#FEED89","#FECF49")
+classcolors2=c("#034521","#F2EFE9","#353264","#7476B8","white","#FBF1AB","#FECF49")
+classcolorstodate=c("#034521","#F2EFE9","#440154FF","#31688EFF","#35B779FF","#FDE725FF")
+classcolorstodate=c("#034521","#F2EFE9","#440154","#31688E","#35B779","#FDE725")
+
+gencolors=c("#000004","#51127C","#B63679","#FB8861","#FCFDBF")
 
 # Options for Spinner
 options(spinner.color="#0C1936", spinner.color.background="#ffffff", spinner.size=2)
@@ -93,20 +119,62 @@ orv=read_sf("www/CY2023ORV_merged.shp")
 orv=st_transform(orv,crs=4326)
 
 orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
+st_crs(orvhatch)=4326
 
 # ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/ORV shapefiles/ctyorv.shp")
-ctyorv=read_sf("www/ctyallERSv2.shp")
-ctyorv=st_transform(ctyorv,crs=4326)
+ctyorv=read_sf("www/ctyallERSv3cc.shp",crs=4326)
+#ctyorv=st_transform(ctyorv,crs=4326)
 ctyorv$FIPS=paste0(ctyorv$STATEFP,ctyorv$COUNTYFP)
+ctyorv$HighPriority=rbinom(dim(ctyorv)[1],1,0.02)
+
+## Getting general state goal stuff
+ctyorv1b=ctyorv%>%st_drop_geometry()%>%
+  dplyr::select(STATE_NAME,PTGoal,StrgA_N,FndDd_N,Rdkll_N,SrvTr_N,NWCO_Nd)
+names(ctyorv1b)=c("STATE_NAME","PTGoal", "StrageAct_Needed","FoundDead_Needed",
+                  "Roadkill_Needed","SurvTrap_Needed","NWCO_Needed")
+
 
 ## Read in the current dataset 
 #ersdata <- read_excel("www/2023_Complete_ERS.xlsx",col_types = col_types)
-ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
-ersdata$DATE2=as.POSIXct(ersdata$DATE,format="%Y-%m-%d")
+#ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
+## Read in the current dataset 
+#ersdata <- read_excel("www/2023_Complete_ERS.xlsx",col_types = col_types)
+#ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
+#ersdata <- read_excel("www/DummyERS_Feb2025.xlsx",col_types = col_types)
+ersdata <- read_excel("www/2025 USDA ERS Jan_Feb for Dashboard.xlsx",col_types = col_types)
+
 ## If the ERSCATEGORY has been left blank, this will take the information from the FREETEXT
 ersdata$ERSCATEGORY=ifelse(is.na(ersdata$ERSCATEGORY)|ersdata$ERSCATEGORY=="null",gsub("\\;.*","",ersdata$FREETEXT),ersdata$ERSCATEGORY)
 ersdata$ERSCATEGORY=ifelse(nchar(ersdata$ERSCATEGORY)==1,ersdata$ERSCATEGORY,
                            ifelse(grepl("ERS=",toupper(ersdata$ERSCATEGORY)),gsub("ERS=","",toupper(ersdata$ERSCATEGORY)),NA))
+
+
+## Lets see about combining with old data before any processing
+### Old data for comparisons
+old=read.csv("www/ERS_2006-2024_ProcessedAll.csv")
+old=old[,1:94]
+old$DATE=as.POSIXct(old$DATE,"%Y-%m-%d",tz = "UTC")
+
+# change some dumb names
+names(old)[which(names(old)%in%setdiff(names(old),names(ersdata)))]=setdiff(names(ersdata),names(old))
+old=old[,match(names(ersdata),names(old))]
+old=rbind(old,ersdata)
+old$STATE_NAME=rabiestates[match(old$STATE,rabiestates$StateAbb),"StateName"]
+
+# Process older data
+old=old%>%filter(SPECIES=="RACCOONS") %>% 
+  mutate(Point=ifelse(ERSCATEGORY==1,14,
+                      ifelse(ERSCATEGORY==2,20,
+                             ifelse(ERSCATEGORY==3,4,1))),
+         Month=format(DATE,"%m"),
+         Year=format(DATE,"%Y"))
+
+old$TilNow=ifelse(as.numeric(format(old$DATE,"%m"))<
+                    max(as.numeric(format(ersdata$DATE,"%m")))+1,"Year To Date","Total")
+
+
+## Now process like normal
+ersdata$DATE2=as.POSIXct(ersdata$DATE,format="%Y-%m-%d")
 ersdata=ersdata[!is.na(ersdata$ERSCATEGORY),]
 ersdata$Category=ersnames[match(ersdata$ERSCATEGORY,ersnames$Num),"Name"]
 
@@ -117,21 +185,9 @@ ersdata=ersdata[which(ersdata$STATE%in%rabiestates$StateAbb),]
 ersdata$COUNTY[ersdata$COUNTY=="DE KALB"]="DEKALB"
 ersdata$COUNTY[ersdata$COUNTY=="DONA ANA"]="DOÑA ANA"
 ersdata$COUNTY[ersdata$COUNTY=="LA SALLE"&ersdata$STATE=="LA"]="LASALLE"
-ersdata$StateName=rabiestates[match(ersdata$STATE,rabiestates$StateAbb),"StateName"]
-ersdata$STCO=tolower(paste(ersdata$StateName,ersdata$COUNTY,sep=","))
+ersdata$STATE_NAME=rabiestates[match(ersdata$STATE,rabiestates$StateAbb),"StateName"]
+ersdata$STCO=tolower(paste(ersdata$STATE_NAME,ersdata$COUNTY,sep=","))
 ersdata$Points=ersnames[match(ersdata$ERSCATEGORY,ersnames$Num),"Points"]
-ersdata=ersdata[which(ersdata$SPECIES=="RACCOONS"),]
-
-# Just county information for genetics plotting
-uscd=sf::read_sf("www/cb_2018_us_county_5m.shp")
-uscd=st_transform(uscd,crs=4326)
-uscd=uscd[which(uscd$STATEFP%in%rabiestates$Fips),]
-uscd$STATEID=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"Fips"]
-uscd$STATE_NAME=rabiestates[match(uscd$STATEFP,rabiestates$Fips),"StateName"]
-uscd$FIPS=paste0(uscd$STATEFP,uscd$COUNTYFP)
-uscd=sf::st_transform(uscd,crs=4326)
-uscd$STCO=paste(tolower(uscd$STATE_NAME),tolower(uscd$NAME),sep=",")
-uscd$HighPriority=rbinom(dim(uscd)[1],1,0.05)
 
 ## Get points
 ### Calculating points from our data
@@ -147,23 +203,41 @@ pwp$TierName=ifelse(is.na(pwp$Tier),"None",
                     ifelse(pwp$Tier==1,"High","Low"))
 pwp$CtyTier=paste(pwp$NAME,pwp$TierName,sep="-")
 pwp=pwp%>%
-  mutate(Points=replace_na(Points,0))
+  mutate(Points=replace_na(Points,0),
+         STATE_NAME=STATE_NAME.x) %>% 
+  dplyr::select(-STATE_NAME.x,-STATE_NAME.y)
 
 ## Summarizing data by county-tier designation
 NRMPcounty=pwp%>%st_drop_geometry%>%
-  group_by(StCtyTier)%>%
-  summarise(Pts=sum(Points))
+  group_by(StCtyTier,STATE_NAME)%>%
+  summarise(Pts=sum(Points),
+            PtGoal=mean(PTGoal),
+            Status=ifelse(Pts>=PtGoal,"Goal met","Not met"))
 
-
+###
+### Getting state level goals
+###
+ctyorv1b=ctyorv%>%st_drop_geometry()%>%
+  dplyr::select(STATE_NAME,PTGoal,StrgA_N,FndDd_N,Rdkll_N,SrvTr_N,NWCO_Nd)
+names(ctyorv1b)=c("STATE_NAME","PTGoal", "StrageAct_Needed","FoundDead_Needed",
+                  "Roadkill_Needed","SurvTrap_Needed","NWCO_Needed")
+statsamp=ctyorv1b%>%group_by(STATE_NAME)%>%
+  summarise(PointGoal=sum(PTGoal,na.rm = TRUE),
+            StrageAct_Needed=sum(StrageAct_Needed,na.rm = TRUE),
+            FoundDead_Needed=sum(FoundDead_Needed,na.rm = TRUE),
+            Roadkill_Needed=sum(Roadkill_Needed,na.rm = TRUE),
+            SurvTrap_Needed=sum(SurvTrap_Needed,na.rm = TRUE),
+            NWCO_Needed=sum(NWCO_Needed,na.rm = TRUE))
 ########
 ###
-###   Checking with the data from 2023
+###   Getting county-tier evaluations based on points from this year
 ###
 ########
 ## ERS area by county tier information
 ctypts=left_join(ctyorv,NRMPcounty,by=c("StCtyTier"))
 ctypts=ctypts%>%
-  mutate(Pts=replace_na(Pts,0),
+  mutate(STATE_NAME=STATE_NAME.x,
+         Pts=replace_na(Pts,0),
          TierName=replace_na(TierName,"None"),
          PtDiff=Pts-PTGoal,
          PtLevs=ifelse(Tier==0,ifelse(Pts>0,-5,-4),
@@ -172,30 +246,173 @@ ctypts=ctypts%>%
                                      ifelse(PtDiff<0,-1,
                                             ifelse(PtDiff==0,0,
                                                    ifelse(PtDiff<10,1,
-                                                          ifelse(PtDiff<50,2,3))))))))
+                                                          ifelse(PtDiff<50,2,3))))))),
+         Point_Levels=factor(ifelse(Tier==0,ifelse(Pts>0,"Bonus","No ERS"),
+                                    ifelse(PtDiff<(-50),"Need 50+ points",
+                                           ifelse(PtDiff<(-10),"Need 10+ points",
+                                                  ifelse(PtDiff<0,"Need 1+ points",
+                                                         ifelse(PtDiff==0,"Goal met",
+                                                                ifelse(PtDiff<10,"Good job",
+                                                                       ifelse(PtDiff<50,"Great job","Awesome job!"))))))),
+                             ordered=TRUE,levels= c("Awesome job!","Great job","Good job",
+                                                    "Goal met","Need 1+ points","Need 10+ points","Need 50+ points","No ERS","Bonus")),
+         PtGoalProgress=round(PTGoal*(max(as.numeric(format(ersdata$DATE,"%m")))/12),0),
+         PtDiffProgress=Pts-PtGoalProgress,
+         PtLevProgress=ifelse(Tier==0,ifelse(Pts>0,-3,-2),
+                              ifelse(PtDiff==0,1,
+                                     ifelse(PtDiff>0,2,
+                                            ifelse(PtDiffProgress<0,-1,0)))),
+         PointLevelProgress=factor(case_when(PtLevProgress==(-3)~"Bonus",
+                                             PtLevProgress==(-2)~"No ERS",
+                                             PtLevProgress==(-1)~"Points needed",
+                                             PtLevProgress==0~"On track",
+                                             PtLevProgress==1~"Goal met",
+                                             PtLevProgress==2~"Goal exceeded"),
+                                   ordered=TRUE,levels=c("Bonus","No ERS","Points needed","On track","Goal met","Goal exceeded")),
+         PtLevs2=ifelse(Tier==0,ifelse(Pts>0,-4,-3),
+                        ifelse(PtDiff<(-9),-2,
+                               ifelse(PtDiff<(0),-1,
+                                      ifelse(PtDiff==0,0,
+                                             ifelse(PtDiff>9,2,1))))),
+         Point_Levels2=factor(ifelse(Tier==0,ifelse(Pts>0,"Bonus","No ERS"),
+                                     ifelse(PtDiff<(-10),"Need 10+ points",
+                                            ifelse(PtDiff<(-1),"Need 1+ points",
+                                                   ifelse(PtDiff==0,"Goal met",
+                                                          ifelse(PtDiff>10,"Awesome job!","Great job"))))),
+                              ordered=TRUE,levels = c("Awesome job!","Great job","Goal met","Need 1+ points","Need 10+ points","No ERS","Bonus"))) %>% 
+  dplyr::select(-STATE_NAME.x,-STATE_NAME.y)
 
-#######
+
+
+######
+###
+### Evaluating the spatial coverage of the previous years compared to this year to date
+###
+oldsf=st_as_sf(old,coords = c("LONGITUDE","LATITUDE"),crs=4326)
+#oldsf=st_transform(oldsf,crs=3395)
+
+oldcty=st_join(oldsf[,-which(names(oldsf)=="STATE_NAME")],ctyorv)
+
+## Summarize stuff by year and cty area
+oldsum=oldcty %>% st_drop_geometry %>% 
+  group_by(Year,StCtyTier,STATE_NAME) %>% 
+  summarise(Pts=sum(Point))
+
+# Get all the county info for evaluation from ctyorv
+ctycomp=ctyorv %>% st_drop_geometry() %>% 
+  dplyr::select(StCtyTier,TierName,STATE_NAME,PTGoal)
+
+countyareas=unique(ctycomp$StCtyTier[ctycomp$TierName!="None"])
+yrs=unique(oldsum$Year)
+allcombs=expand.grid(countyareas,yrs)
+names(allcombs)=c("StCtyTier","Year")
+
+ctyold=allcombs %>% left_join(ctycomp)
+ctyold=ctyold %>% left_join(oldsum)
+ctyold=ctyold %>%
+  mutate(Pts=replace_na(Pts,0),
+         Status=ifelse(Pts>=PTGoal,"Goal met","Not met"))
+
+## Now getting state level summary data % counties with points met per year
+oldstsum=ctyold %>% 
+  group_by(STATE_NAME,Year) %>% 
+  summarise(TotCtyAreas=n(),
+            Nummet=length(which(Status=="Goal met")),
+            PercentMet=Nummet/TotCtyAreas*100)
+
+
+
+
+
+#########################
 ### 
 ### Get new genetic samples from the ERS data
+###
+#########################
 # Starting simple only DNASAMPLE==YES
-ersgen=ersdata|>filter(DNASAMPLE=="YES")|>
+ersgen=ersdata%>%filter(DNASAMPLE=="YES")%>%
   dplyr::select(DATE,STATE,COUNTY,LATITUDE,LONGITUDE,SPECIES,IDNUMBER,SEX,
-                RELATIVEAGE,FATE,METHOD)|>
+                RELATIVEAGE,FATE,METHOD)%>%
   mutate(Sample="New")
 
 
 ### Read in the data from Matt that has the genetic data up to 2024
 gen=read.csv("www/GeneticsDataFromMatt.csv")
-gen=gen[!is.na(gen$LONGITUDE),]
-gen$DATE=as.POSIXct(gen$DATE,format="%m/%d/%Y")
-gen$FATE=" "
-gen$METHOD=" "
-gen$Sample="Archived"
+gen=gen %>% filter(!is.na(LONGITUDE),LONGITUDE<0,SPECIES=="RACCOONS",STATE%in%rabiestates$StateAbb) %>% 
+  mutate(
+    DATE=as.POSIXct(DATE,format="%m/%d/%Y"),
+    FATE=" ",
+    METHOD=" ",
+    Sample="Archived"
+  )
 gen=rbind(gen,ersgen)
 
-## State maps
+## Getting a high and low priority ish area from ERS shapefile
+ersarea=read_sf("www/2024 ERS Areas.shp")
+ersarea=st_transform(ersarea,crs=3395)
+ersbuff=st_as_sf(st_union(st_buffer(ersarea,dist = 100000)))|>
+  mutate(ERSclose="Yes")
+
+###  Making up some goals and priority areas, but these will be provided by Matt
+gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = ("+proj=longlat +datum=WGS84"))
+ctygen=st_intersects(ctyorv,gensf)
+ctyorv$GenPts=sapply(ctygen,length)
+
+ctyorv=ctyorv|>
+  mutate(AreaKm=as.numeric(st_area(geometry)/1000^2),
+         GeneticGoal=ceiling(pmin(AreaKm/2000,1)*20),
+         GenPriority=ifelse(GeneticGoal==20&TierName!="None",1,2),
+         GenDiff=GenPts-GeneticGoal)
+
+## Combine with my ERS buffer area to determine region of higher interest for genetics
+ersbuff=st_transform(ersbuff,st_crs(ctyorv))
+ctybuff=st_intersects(ctyorv,ersbuff)
+ctyorv$ERSclose=sapply(ctybuff,length)
+
+## Trying to get an estimate of spatial coverage within a county area
+genpts=st_join(gensf,ctyorv)
+genpts=st_transform(genpts,crs=3395)
+capoly=genpts|>
+  summarize() |>
+  st_buffer(dist=10000)
+
+## Cropping the buffered areas by county tier areas
+ctyorvx=st_transform(ctyorv,crs=3395)
+ctyorvx <- st_make_valid(ctyorvx)
+
+capc=st_intersection(ctyorvx,capoly)
+capc=capc|>
+  mutate(GenArea=as.numeric(st_area(geometry)/1000^2))
+
+## Add genetic coverage data to ctyorv
+ctyorv$AreaKm=as.numeric(st_area(ctyorvx$geometry)/1000^2)
+ctyorv$GenCoverkm=capc$GenArea[match(ctyorv$StCtyTier,capc$StCtyTier)]
+ctyorv$GenAreaPerCover=ctyorv$GenCoverkm/ctyorv$AreaKm*100
+
+### Now creating a genetic evaluation 
+ctyorv=ctyorv|>
+  mutate(GenPtLev=ifelse(ERSclose==0,1,
+                         ifelse(GenDiff<(-10),4,
+                                ifelse(GenDiff<0,3,
+                                       ifelse(GenAreaPerCover<66,5,2)))),
+         GenLev=factor(ifelse(ERSclose==0,"Lower priority",
+                              ifelse(GenDiff<(-10),"10+ samples needed",
+                                     ifelse(GenDiff<0,"1+ samples needed",
+                                            ifelse(GenAreaPerCover<66,
+                                                   "More spatial coverage needed","Genetic goal met")))),
+                       ordered=TRUE,levels=c("More spatial coverage needed","10+ samples needed",
+                                             "1+ samples needed","Genetic goal met","Lower priority")))
+
+
+
+########################
+###
+### State maps
+###
+########################
 statmaps=sf::read_sf("www/states.shp")
-statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
+statmaps=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
+statmaps=st_transform(statmaps,crs=4326)
 
 ## Allow blank state selection for app
 rabiestates=rbind(c(" "," "," "),rabiestates)
@@ -324,13 +541,15 @@ ui <- dashboardPage(
                            title=span(tags$img(src='USDA_bw_transparent.png', style='margin-top:8px;',height=90,width=120,align="left"),
                                       column(10, class="title-box", 
                                              tags$h1(class="primary-title", style='margin-top:25px;font-size=50px',
-                                                     "ERS Data Collection Dashboard")))),
+                                                     "ERS Data Collection Dashboard"),
+                                             tags$h3(class="secondary-title", style='margin-top:8px;font-size=30px',
+                                                     "Data up to: February 27, 2025")))),
   
   # Sidebar  
   dashboardSidebar(
     tags$style(".left-side, .main-sidebar {padding-top: 100px}"),
     width=350,
-    title=tags$h2(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Data selection",align='left'),
+    title=tags$h2(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"State selection",align='left'),
     useShinyjs(),
     # This makes web page load the JS file in the HTML head.
     # The call to singleton ensures it's only included once
@@ -342,62 +561,175 @@ ui <- dashboardPage(
     tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"To download a report of ERS surveillance data, first select a state. A download button will appear below, click the button to generate report.",align='left'),
     shinyjs::hidden(downloadButton(outputId = "reportX",label =  "Download State Report",style="color:black;font-size:18px")),
     tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"_________________________",align='left'),
-    conditionalPanel(condition = 'input.tabs=="maptab"',
+    conditionalPanel(condition = 'input.tabs=="maptabv1"',
                      tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Mapping options",align='left'),
                      radioButtons(inputId = "mapheat",label = "Show density of surveillance samples or county points assessment?",
-                                  choices = c("Heatmap","County assessment","Neither"),selected = "County assessment"),
+                                  choices = c("County assessment","County assessment to date","Heat map","Neither"),selected = "County assessment"),
+                     radioButtons(inputId = "ShowPts",label = "Display surveillance sample locations?",
+                                  choices = c("Yes","No"),selected="No")),
+    conditionalPanel(condition = 'input.tabs=="maptabv2"',
+                     tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Mapping options",align='left'),
+                     radioButtons(inputId = "mapheat",label = "Show density of surveillance samples or county points assessment?",
+                                  choices = c("County assessment","Heat map","Neither"),selected = "County assessment"),
                      radioButtons(inputId = "ShowPts",label = "Display surveillance sample locations?",
                                   choices = c("Yes","No"),selected="No")),
     conditionalPanel(condition = 'input.tabs=="gentab"',
                      tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Genetic mapping options",align='left'),
                      radioButtons(inputId = "mapheatgen",label = "Show density of genetic samples or county assessment?",
-                                  choices = c("Heatmap","County assessment","Neither"),selected = "County assessment"),
+                                  choices = c("County assessment","Heat map","Spatial gaps","Neither"),selected = "County assessment"),
                      radioButtons(inputId = "ShowPtsgen",label = "Display genetic sample locations?",
                                   choices = c("Yes","No"),selected="No"))
   ),
   
   # Show output
   dashboardBody(
+    tags$head(
+      tags$style(
+        HTML("
+                      .main-sidebar{
+                      position:fixed;
+                      width:350px;
+                      height:100%;
+                      overflow-y:auto; /*Enables scrolling in sidebar*/
+                      background-color:#222d32;/*match dashboard color*/
+                      }
+                      .content-wrappeer,.right-side{
+                      margin-left:350px; /*Match sidebar width*/
+                      }
+                      .nav-tabs > li > a {
+                        border: 1px solid #222D32 !important; /* Outline around individual tabs */
+                        border-radius: 5px; /* Optional: rounded corners */
+                        margin: 2px; /* Space between tabs */
+                      }
+                      .nav-tabs > li.active > a {
+                        background-color: #222D32 !important; /* Highlight active tab */
+                        color: white !important;
+                      }
+                      .shiny-notification{
+                      position:fixed;
+                      bottom:10px;
+                      left:10px;
+                      right:auto;
+                      background-color:#F7BF63;
+                      color:black;
+                      font-weight:bold;
+                      padding:10px;
+                      border-radius:5px;
+                      }
+                        "
+        ))
+    ),
     tabsetPanel(id="tabs",selected="guidetab",
                 tabPanel(title = "User Guide",value="guidetab",icon=icon("info"),
                          box(width=12,title=span("How to use this dashboard",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
-                             column(11,p("Welcome to the ERS Data Collection Dashboard.  The intent of this dashboard is to empower rabies biologists and state directors by providing a clear, user-friendly way to visualize and interact with the data you collect. The goal of this tool is to help gain insights into program performance, easily track metrics of success, and efficiently generate reports that can be shared with stakeholders to demonstrate impact and progress. ",style="font-size:130%;"),
-                                    p("This dashboard is designed to be a resource that enhances the great work that in done in support of the National Rabies Management Program. This dashboard is aimed at helping rabies biologists make your work more impactful and to showcase the results of your efforts to other.",style="font-size:130%;"),
-                                    p("You can toggle through the different tabs to see different aspects of the data. To use many features of this dashboard, you need to select a state of interest (using the panel on the left). Once a state is selected you can see different tables and figures that this dashboard producces and you can download a report of your state's data. Below are descriptions of the tabs and how to use them.",style="font-size:130%;")),
+                             column(11,p("Welcome to the ERS Data Collection Dashboard.  The intent of this dashboard is to empower rabies biologists and state directors by providing a clear, user-friendly way to visualize and interact with the data you collect. This should serve as a tool is to help gain insights into program performance, easily track metrics of success, and efficiently generate reports that can be shared with stakeholders to demonstrate impact and progress. ",style="font-size:130%;"),
+                                    p("This dashboard is designed to be a resource that enhances the great work that in done in support of the National Rabies Management Program. This dashboard is aimed at helping rabies biologists make your work more impactful and to showcase the results of your efforts to others.",style="font-size:130%;"),
+                                    p("You can toggle through the different tabs to see different aspects of the data. To use many features of this dashboard, you need to select a state of interest (using the panel on the left). Once a state is selected you can see different tables and figures that this dashboard produces and you can download a report of your state's data. Below are descriptions of the tabs and how to use them.",style="font-size:130%;")),
                              column(11,        
-                                    p("     •	",strong("Summary Report")," – This tab summarizes the ERS data in your quarterly report. There is a pie chart that shows the number of samples by ERS category and the number of points by category. ",style="font-size:130%;"),
-                                    p("     •	",strong("Distribution Map")," – This tab has an interactive map that lets you see the data. The default plot shows the county-ERS tier evaluations (has the county goal be met based on the number of samples collected to date). There is an option to show a heatmap to visualize the density of samples and where they were collected. You can also choose to include the actual point data, to see where all samples have been collected. As you scroll over the map it will tell you which county your cursor is in. If you click on a point, an info box will pop up that tells you the IDNUMBER, SPECIES, COUNTY, and ERSCATEGORY on that MIS record. You can also visualize the samples by category.",style="font-size:130%;"),
+                                    p("     •	",strong("Points Overview")," – This tab summarizes the ERS data in your quarterly report. There is a pie chart that shows the number of samples by ERS category and the number of points by category. ",style="font-size:130%;"),
+                                    p("     •	",strong("Trend Over Time")," – This tab summarizes the ERS data in your quarterly report. There is a pie chart that shows the number of samples by ERS category and the number of points by category. ",style="font-size:130%;"),
+                                    p("     •	",strong("Distribution Map")," – This tab has an interactive map that lets you see the data. The default plot shows the county-ERS tier evaluations (has the county goal be met based on the number of samples collected to date). There is an option to show a heat map to visualize the density of samples and where they were collected. You can also choose to include the actual point data, to see where all samples have been collected. As you scroll over the map it will tell you which county your cursor is in. If you click on a point, an info box will pop up that tells you the IDNUMBER, SPECIES, COUNTY, and ERSCATEGORY on that MIS record. You can also visualize the samples by category.",style="font-size:130%;"),
                                     p("     •	",strong("Some other fun information")," – What this tab does is a mystery but hopefully it will be something interesting.",style="font-size:130%;"),
                              )
                          ),
-                         box(width=12,title=span("Trouble-shooting",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                         box(width=12,title=span("Troubleshooting",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # 
                              column(11,p("",style="font-size:130%;"),
                                     p("We have tried to make this app as user-friendly as possible. However, we know that issues may arise. ",style="font-size:130%;"), 
-                                    p("     •	",strong("Email someone if you have issues. "),style="font-size:130%;")
+                                    p("     •	",strong("Email Amy Davis (Amy.J.Davis@usda.gov) if you have issues. "),style="font-size:130%;")
                              )
                          )
                 ),
                 tabPanel(title = "Points Overview",value="overviewtab",icon = icon("bar-chart"),
-                         box(width=12,title=span("Summary ",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
-                             # varImp Plot
-                             column(10,plotOutput('PiePlots'))
-                         ),
-                         box(width=12,title=span("Points needed and points collected by county",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
-                             #confusion matrix, model accuracy metrics
-                             column(10,withSpinner(dataTableOutput(outputId="tableerror")))
-                         )
+                         column(width=8,box(width=7.8,title=span("Samples and Points by ERS Category ",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            # varImp Plot
+                                            plotOutput('PiePlots')
+                         )),
+                         column(width=4,box(width=3.8,height=NULL, title = "Points by category", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+                                              <p>These pie charts are trying to highlight how different categories of surveillance relate to the overall proportion of ERS points. </p>
+                                          
+                                              <h4><strong>Samples Pie Chart</strong></h4>
+                                              <ul>
+                                                <li> This chart shows the percent of samples that are each of the different surveillance categories. The values are percents.</li>
+                                              </ul>
+                                              <h4><strong>Points Pie Chart</strong></h4>
+                                              <ul>
+                                                <li> This chart shows the percent of ERS points that are each of the different surveillance categories. The values are percents. </li>
+                                              </ul>
+                                              <p>If no points have been collected in the state in this calendar year, no pie charts will be shown.</p>
+                                            "),style="font-size:130%;")),
+                         column(width=8,height=8.2,box(width=7.8,height=NULL,title=span("Points collected and points needed ",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                                       # varImp Plot
+                                                       plotOutput('CountyBars',height=800)
+                         )),
+                         column(width=4,box(width=3.8,height=NULL, title = "County area evaluations", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+                                              <p>County evaluation bar charts. If there are two columns, the left-hand side shows the counties where the county area point goal was met or exceeded and the right-hand side shows the counties where points are still needed.</p>
+                                              <p>If no county goals have been met, only the county area needs plot is shown. If all county goals are met only the county areas met plot is shown. </p>
+                                              <h4><strong>County-areas where point goals are met</strong></h4>
+                                              <ul>
+                                                <li> The bars on this chart show the point goals (all of which have been met) in black and any points above the point goal are shown in gold. The plot is sorted with counties with the most points collected on top.</li>
+                                              </ul>
+                                              <h4><strong>County-area where points are still needed </strong></h4>
+                                              <ul>
+                                                <li> The bars on this chart show the points collected towards the point goal in black and the points still needed to achieve the point goal are shown in red. The plot is sorted with counties with the highest point goals on top. </li>
+                                              </ul>
+                                            "),style="font-size:130%;")),
+                         column(width=8,box(width=7.8,title=span("Points needed and points collected by county",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            #confusion matrix, model accuracy metrics
+                                            column(10,withSpinner(dataTableOutput(outputId="tableerror")))
+                         )),
+                         column(width=4,box(width=3.8,height=NULL, title = "Table of points", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+                                                <p>This table shows the goal for points, number of points collected, and number of points needed for each county, ERS tier level, and subset of county as necessary.</p>
+                                            
+                                                <h4><strong>Table components</strong></h4>
+                                                <ul>
+                                                  <li><strong>State:</strong> State of interest.</li>
+                                                  <li><strong>County:</strong> County of interest. A few counties in Maine and New York are very large and have been additionally subset, if there is a number next to the county tier that denotes the subset region.</li>
+                                                  <li><strong>Tier:</strong> Some counties are completely in the high or low ERS tier and some have regions in both tiers, in that case the county evaluations are split into high and low tier areas. </li>
+                                                  <li><strong>Goal:</strong> Target number of ERS points for the county tier area.</li>
+                                                  <li><strong>Points:</strong> The number of ERS points so far collected for the county tier area.</li>
+                                                  <li><strong>Needed:</strong> Number of ERS points needed for the county tier area. If no points are needed it says goal met.</li>
+                                                </ul>
+                                            "),style="font-size:130%;"))
+                         
                 ),
-                tabPanel(title = "Distribution Map",value="maptab",icon = icon("map"),
-                         box(width=12,title=span("It's a map!",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
-                             # 
-                             column(11,p("Some neat information about the map ",style="font-size:130%;"),
-                             )
+                tabPanel(title = "Trends Over Time",value="timetab",icon = icon("chart-line"),
+                         box(width=12,height=NULL,title=span("Summary of location info",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                             # Dynamic valueBoxes
+                             infoBoxOutput("totsampsinf"),
+                             infoBoxOutput("countyerrorinf"),
+                             infoBoxOutput("countymetinf")
                          ),
-                         box(width=12,title=span("Summary of location info",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
-                             #tags$h4(class="primary-subtitle", style='margin-top:8px;margin-left:15px;',"Warning there may be issues if locations are close to county boundaries but the location will be correct.  This is more of a reminder to double check the locations than a confirmation that there are issues. ",align='left'),
-                             
-                             # 
+                         column(width=7,box(width=6.8,title=span("Progress tracking ",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            withSpinner(plotOutput('ProgressPlot'),color = "#0C1936"))),
+                         column(width=5,box(width=4.8,height=NULL,title=span("Description of progress plot",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            HTML("
+                                          <p>The point of this plot is to get an idea of how point collection in this year is compared to a similar point in past years. This plot shows ERS points collected in the state of interest in previous years compared to this year’s data to date. The grey bars represent the total ERS points that were collected across the entire calendar year. The blue portions of the bars show the progress in ERS point collection to the same month in this calendar year. The current year data only has data up to this month and thus has no grey portion of the bar plot.  The red horizontal line is the ERS point goal for the state. This is an overall objective but does not account for the spatial coverage. </p>
+                                         "),style="font-size:130%;")),
+                         column(width=7,box(width=6.8,title=span("Spatial coverage tracking ",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            withSpinner(plotOutput('SpatialProgressPlot'),color = "#0C1936"))),
+                         column(width=5,box(width=4.8,height=NULL,title=span("Description of spatial progress plot",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            HTML("
+                                          <p>Here we are showing the percent of county-areas within a state where the ERS point goal has been met.  Only county-areas in the ERS low or high tier area are evaluated here. If all county-areas have their point goal met, the bar will be at 100%. This figure highlights how good the spatial coverage of points collected is, this is another way of evaluating ERS data collection. The spatial coverage from previous years are shown as dark grey bars and the spatial coverage in the current year is shown in turquoise. The goal would be to have 100% coverage and the red line denotes that goal.  </p>
+                                         "),style="font-size:130%;"))
+                ),
+                tabPanel(title = "Distribution Map v1",value="maptabv1",icon = icon("map"),
+                         box(width=12,height=NULL,title=span("Summary of location info",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # Dynamic valueBoxes
                              valueBoxOutput("totsamps"),
                              valueBoxOutput("countyerror"),
@@ -407,15 +739,127 @@ ui <- dashboardPage(
                                             withSpinner(leafletOutput(outputId = "mapx",height = 600),color = "#0C1936"),
                                             downloadButton( outputId = "dl",label = "Save the map?")
                          )),
-                         column(width=5,box(width=4.8,title=span("Table of point goals, point collected, and points needed by county. Only counties where the goals were not met are shown.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                         column(width=5,box(width = 4.8,height=NULL, title = "ERS Map Overview", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This interactive map provides multiple ways to visualize Enhanced Rabies Surveillance (ERS) data. Users can toggle between different display options to assess sample coverage and distribution.You can save the map as an image by clicking the button on the bottom of the map.</p>
+
+    <h4><strong>County-Level Assessment (Default View)</strong></h4>
+    <ul>
+      <li>The default map evaluates whether ERS point goals have been met at a county (or sub-county) level.</li>
+      <li>Most areas are assessed by county, but some counties are divided into high-priority and low-priority ERS areas, meaning they have separate evaluations.</li>
+      <li>Color Coding: <span style='display: inline-block; width:15px;height:15px;background-color:#5456AA;margin-right: 5px;'></span> purple-blue colors mean more samples are needed, <span style='display: inline-block; width:15px;height:15px;background-color:white;margin-right: 5px;'></span>white means point goal was met, <span style='display: inline-block; width:15px;height:15px;background-color:#FECF49;margin-right: 5px;'></span> gold colors means point goal was exceeded, and <span style='display: inline-block; width:15px;height:15px;background-color:#034521;margin-right: 5px;'></span> dark green means bonus samples were collected in areas outside the ERS region.</li>
+    </ul>
+        <h4><strong>County-Level Assessment To Date</strong></h4>
+    <ul>
+      <li>County point goals are for the entire calendar year. Use this option to show where you are on track to meet point goals, where points are still needed to be on track, and where the year goal is already met or exceeded. </li>
+      <li>Similar to the general county assessment, areas are assessed by county and some are divided into high-priority and low-priority ERS areas.</li>
+      <li>Color Coding: <span style='display: inline-block; width:15px;height:15px;background-color:#440154FF;margin-right: 5px;'></span> purple means more points are needed, <span style='display: inline-block; width:15px;height:15px;background-color:#31688EFF;margin-right: 5px;'></span> blue means sample collection is on track to meet point goals, <span style='display: inline-block; width:15px;height:15px;background-color:#35B779FF;margin-right: 5px;'></span> green means yearly point goals are already met, and <span style='display: inline-block; width:15px;height:15px;background-color:#FDE725FF;margin-right: 5px;'></span> yellow means yearly point goals have been exceeded.  <span style='display: inline-block; width:15px;height:15px;background-color:#034521;margin-right: 5px;'></span> Dark green are bonus areas were points were collected outside ERS regions.</li>
+    </ul>
+    <h4><strong>Heat Map</strong></h4>
+    <ul>
+      <li>Instead of the county-level assessment, users can switch to a heat map showing sample density (number of samples per km²).</li>
+      <li>This helps visualize the density of samples across space without reference to jurisdictional borders. </li>
+      <li>If there are no points in the state in this calendar year, no heat map will appear.</li>
+      <li>Heatmaps do not render when saving the map. To save the image take a screen shot.</li>
+    </ul>
+    <h4><strong>Display Surveillance Sample Locations</strong></h4>
+    <ul>
+      <li>Users can choose to display individual sample locations on the map.</li>
+      <li>Clicking a sample dot provides additional details including: Species of the sampled animal, county where it was collected, surveillance category (i.e., Strange Acting, Found Dead, Road Kill, Surveillance Trapped, NWCO/Other, Unknown), and rabies test result if available (Positive or Negative).</li>
+      <li>If there are no points in the state in this calendar year, no points will appear.</li>
+    </ul>
+  "),style="font-size:110%;"
+                         )),
+                         column(width=7,box(width=6.8,height=NULL,title=span("Table of point goals, point collected, and points needed by county. Only counties where the goals were not met are shown.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                                             dataTableOutput('tablex')
-                         ))
-                ),     
+                         )),
+                         column(width=5,box(width = 4.8,height=NULL, title = "ERS Table Description", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This table shows the goal for points, number of points collected, and number of points needed for each county, ERS tier level, and subset of county as necessary. Only countie tier areas where the goal has not been met are shown here.</p>
+
+    <h4><strong>Table components</strong></h4>
+    <ul>
+      <li><strong>State:</strong> State of interest.</li>
+      <li><strong>County Tier:</strong> County of interest. Some counties are completely in the high or low ERS tier and some have regions in both tiers, in that case the county evaluations are split into high and low tier areas. A few counties in Maine and New York are very large and have been additionally subset, if there is a number next to the county tier that denotes the subset region.</li>
+      <li><strong>Goal:</strong> Target number of ERS points for the county tier area.</li>
+      <li><strong>Points:</strong> The number of ERS points so far collected for the county tier area.</li>
+      <li><strong>Needed:</strong> Number of ERS points needed for the county tier area. If zero points are needed, the goal has been met and those data are omitted from this table for simplicity.</li>
+    </ul>
+  "),style="font-size:120%;"))
+                ),
+                tabPanel(title = "Distribution Map v2",value="maptabv2",icon = icon("map"),
+                         box(width=12,height=NULL,title=span("Summary of location info",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                             # Dynamic valueBoxes
+                             infoBoxOutput("totsampsinf"),
+                             infoBoxOutput("countyerrorinf"),
+                             infoBoxOutput("countymetinf")
+                         ),
+                         column(width=7,box(width=6.8,title=span("Map of MIS samples",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            withSpinner(leafletOutput(outputId = "mapx2",height = 600),color = "#0C1936"),
+                                            downloadButton( outputId = "dl2",label = "Save the map?")
+                         )),
+                         column(width=5,box(width = 4.8,height=NULL, title = "ERS Map Overview", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This interactive map provides multiple ways to visualize Enhanced Rabies Surveillance (ERS) data. Users can toggle between different display options to assess sample coverage and distribution.You can save the map as an image by clicking the button on the bottom of the map.</p>
+
+    <h4><strong>County-Level Assessment (Default View)</strong></h4>
+    <ul>
+      <li>The default map evaluates whether ERS point goals have been met at a county (or sub-county) level.</li>
+      <li>Most areas are assessed by county, but some counties are divided into high-priority and low-priority ERS areas, meaning they have separate evaluations.</li>
+      <li>Color Coding: generally, <span style='color: #5456AA; font-weight: bold;'>purple-blue</span> colors mean more samples are needed, white means point goal was met, <span style='color: #FECF49; font-weight: bold;'>gold</span> colors means point goal was exceeded, and <span style='color: #034521; font-weight: bold;'>dark green</span> means bonus samples were collected in areas outside the ERS region.</li>
+    </ul>
+    <h4><strong>Heat Map</strong></h4>
+    <ul>
+      <li>Instead of the county-level assessment, users can switch to a heat map showing sample density (number of samples per km²).</li>
+      <li>This helps visualize the density of samples across space without reference to jurisdictional borders. </li>
+      <li>If there are no points in the state in this calendar year, no heat map will appear.</li>
+      <li>Heatmaps do not render when saving the map. To save the image take a screen shot.</li>
+    </ul>
+    <h4><strong>Display Surveillance Sample Locations</strong></h4>
+    <ul>
+      <li>Users can choose to display individual sample locations on the map.</li>
+      <li>Clicking a sample dot provides additional details including: Species of the sampled animal, county where it was collected, surveillance category (i.e., Strange Acting, Found Dead, Road Kill, Surveillance Trapped, NWCO/Other, Unknown), and rabies test result if available (Positive or Negative).</li>
+      <li>If there are no points in the state in this calendar year, no points will appear.</li>
+    </ul>
+  "),style="font-size:120%;"
+                         )),
+                         column(width=7,box(width=6.8,height=NULL,title=span("Table of point goals, point collected, and points needed by county. Only counties where the goals were not met are shown.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                                            dataTableOutput('tablex2'))),
+                         column(width=5,box(width = 4.8,height=NULL, title = "ERS Map Overview", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This table shows the goal for points, number of points collected, and number of points needed for each county, ERS tier level, and subset of county as necessary. </p>
+
+    <h4><strong>Table components</strong></h4>
+    <ul>
+      <li><strong>State:</strong> State of interest.</li>
+      <li><strong>County Tier:</strong> County of interest. Some counties are completely in the high or low ERS tier and some have regions in both tiers, in that case the county evaluations are split into high and low tier areas. A few counties in Maine and New York are very large and have been additionally subset, if there is a number next to the county tier that denotes the subset region.</li>
+      <li><strong>Goal:</strong> Target number of ERS points for the county tier area.</li>
+      <li><strong>Points:</strong> The number of ERS points so far collected for the county tier area.</li>
+      <li><strong>Needed:</strong> Number of ERS points needed for the county tier area. If zero points are needed, the goal has been met and that is what is shown in the table.</li>
+    </ul>
+  "),style="font-size:120%;")
+                         )), 
                 tabPanel(title = "General State Needs",value="statetab",icon = icon("readme"),
                          box(width=12,title=span("Info",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # 
-                             column(11,p("The table below shows the point goals per state. Since different types of surveillance categories are worth more points than others, the number of samples needed would change if you collected all of your sample from a particular category  If all of your samples are from NWCO you would need considerably more samples to achive the target point value than if you collected higher value samples (e.g., strange acting, found dead, or roadkill). ",style="font-size:130%;")),
-                             column(11,p("These target numbers are to give a general idea on the surveillance needs.  However, the locations of samples is also important. In the Distribution Map tab of this dashboard, you can get a since of how well your state is doing on collecting samples throughout the ERS high priority area within your state. ",style="font-size:130%;"),
+                             column(11,p("The table below shows the point goals per state. Since different types of surveillance categories are worth more points than others, the number of samples needed would change if you collected all of your sample from a particular category  If all of your samples are from NWCO you would need considerably more samples to achieve the target point value than if you collected higher value samples (e.g., strange acting, found dead, or roadkill). ",style="font-size:130%;")),
+                             column(11,p("These target numbers are to give a general idea on the surveillance needs.  However, the locations of samples are also important. In the Distribution Map tab of this dashboard, you can get a since of how well your state is doing on collecting samples throughout the ERS high priority area within your state. ",style="font-size:130%;"),
                              )
                          ),
                          box(width=11,title=span("Number of samples needed by state shown by category. Fewer samples are needed if they are of higher point vales.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
@@ -424,7 +868,9 @@ ui <- dashboardPage(
                 tabPanel(title = "Genetics Samples",value="gentab",icon = icon("dna"),
                          box(width=12,title=span("Genetic data",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                              # 
-                             column(11,p("Matt Hopken is able to use genetic data to determine population structure of raccoons which helps determine raccoon movement and identify translocation events. This section can include any type of discriptors that we want. The points are color coded for if they are previously archived samples (i.e., from the file Matt provided) and the samples that say new are any sample from the ERS data that had DNASample equalling YES.  We can make other classifiers in there. We can do a lot of different things with the plots. Currently the map just looks like the ERS map but with only the genetic data. I set a target number of genetic samples of 10 for each county just to start, which is obviously simplistic and does not consider areas of higher interest. Play around with this and think about what would changes would be helpful.",style="font-size:130%;"),
+                             column(11,HTML("Matt Hopken is able to use genetic data to determine population structure of raccoons from genetic samples collected in the field, which helps determine raccoon movement and identify translocation events. </p>
+                                    <p>The goal of this section is to present the locations of genetic samples that have been collected prior to this year (archived samples) and samples that have been collected in this calendar year (new samples).  The new samples are those that have DNASAMPLE equal to YES. Not all of these samples are necessarily headed for the genetic archive, some may be collected for other purposes or studies. Information in the comments should help determine if the sample is headed to NWRC. We present the data in a couple different ways to help visualize where additional sampling efforts would be helpful. </p>
+                                    <p>If you have any questions about specific data requests, <strong>contact Matt Hopken (Matt.W.Hopken@usda.gov)</strong>. </p> "),style="font-size:120%;"
                              )
                          ),
                          box(width=12,title=span("Summary stats of genetic samples",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
@@ -440,9 +886,62 @@ ui <- dashboardPage(
                                             withSpinner(leafletOutput(outputId = "mapgen",height = 600),color = "#0C1936"),
                                             downloadButton( outputId = "gendl",label = "Save the map?")
                          )),
-                         column(width=5,box(width=4.8,title=span("Table of target numbers and total genetic samples by county.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
+                         column(width=5,box(width = 4.8,height=NULL, title = "Genetic Map Overview", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This interactive map provides multiple ways to visualize raccoon genetic sample data. Users can toggle between different display options to assess sample coverage and distribution. You can save the map as an image by clicking the button on the bottom of the map.</p>
+
+    <h4><strong>County-Level Assessment (Default View)</strong></h4>
+    <ul>
+      <li>The option shows where more samples are needed, more spatial coverage is needed, and areas where the goals for genetic sampling have been met at a county (or sub-county) level.</li>
+      <li>Most areas are assessed by county, but some counties are divided into high-priority and low-priority ERS areas, meaning they have separate evaluations (same as ERS evaluation).</li>
+      <li>Color Coding: <span style='color: black; font-weight: bold;'>black</span> areas are of lower priority, <span style='color: #51127CFF; font-weight: bold;'>purple</span> areas indicate the genetic sampling goals have been met, <span style='color: #B63679FF; font-weight: bold;'>pink</span> areas indicate at least one more genetic sample is needed, <span style='color: #FB8861FF; font-weight: bold;'>orange</span> areas indicate 10 or more samples are needed, and <span style='color: #FCFDBFFF; font-weight: bold;'>yellow</span> areas indicate that the genetic sampling goal has been met but more spatial coverage is needed.</li>
+    </ul>
+    <h4><strong>Heat Map</strong></h4>
+    <ul>
+      <li>A heat map showing sample density (number of samples per km²) helps visualize the density of samples across space without reference to jurisdictional borders.</li>
+      <li>Heat maps are based on archived and current year samples. </li>
+      <li>Heatmaps do not render when saving the map. To save the image take a screen shot.</li>
+    </ul>
+    <h4><strong>Spatial Gap</strong></h4>
+    <ul>
+      <li>This view shows a buffer around each genetic sample to make gaps in the spatial cover of genetic samples clearer.</li>
+      <li>Any areas not covered by the <span style='color: steelblue; font-weight: bold;'>blue</span> area are areas to focus on for additional sampling. </li>
+    </ul>
+    <h4><strong>Display Surveillance Sample Locations</strong></h4>
+    <ul>
+      <li>Users can choose to display individual sample locations on the map.</li>
+      <li>Each archived sample is represented by a <span style='color: black; font-weight: bold;'>black</span> dot, samples from this calendar year are shown as <span style='color: red; font-weight: bold;'>red</span> dots.</ul>
+      <li>Clicking a sample dot provides additional details including: sample ID, species, county where it was collected, sample source (archived or new), and for archived samples the fate and method of collection are shown.</li>
+    </ul>
+  "),style="font-size:120%;"
+                         )),
+                         column(width=7,box(width=6.8,title=span("Table of target numbers and total genetic samples by county.",style="color:white;font-size:28px"),solidHeader = TRUE,status="primary",
                                             dataTableOutput('tablegen')
-                         ))
+                         )),
+                         column(width=5,box(width = 4.8,height=NULL, title = "ERS Table Description", 
+                                            collapsible = TRUE, 
+                                            collapsed = FALSE,
+                                            solidHeader = TRUE,
+                                            status = "primary",
+                                            HTML("
+    <p>This table shows the goal for the number of genetic samples needed and the number collected by county, ERS tier level, and subset of county as necessary.</p>
+
+    <h4><strong>Table components</strong></h4>
+    <ul>
+      <li><strong>State:</strong> State of interest.</li>
+      <li><strong>County:</strong> County of interest.</li>
+      <li><strong>ERS Tier:</strong> ERS Tiers are either high, low, or none.</li>
+      <li><strong>Subset:</strong> Large counties in Maine and New York as split into smaller areas. If there is a number here, it designates the region within the county. </li>
+      <li><strong>Goal:</strong> Target number of genetic samples for the county tier area.</li>
+      <li><strong>Samples:</strong> The number of genetic samples collected for the county tier area.</li>
+      <li><strong>Status:</strong> An evaluation of the needs for the county tier area.</li>
+    </ul>
+  "),style="font-size:120%;"))
+                         
                 )
     )
   )
@@ -467,12 +966,18 @@ server <- function(input, output,session) {
   # })
   
   
+  ###########################
+  ###
+  ###  Map tab version 1
+  ###
+  ###########################
+  
   ####
   ### Map issues tab components
   ####
   # Create foundational leaflet map
   # and store it as a reactive expression
-  foundational.map <- reactive({
+  foundational.map1 <- reactive({
     
     data <- ersdata
     statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
@@ -484,29 +989,29 @@ server <- function(input, output,session) {
       statmap1=statmaps[statmaps$STATE_NAME==input$staten,]
       ctypts1=ctypts[ctypts$STATE_NAME==input$staten,]
     }
+    
     df=df[which(!is.na(df$LONGITUDE)),]
-    loccols=turbo(7)[as.numeric(df$ERSCATEGORY)]
     
-    ## Get spatial ERS data
-    dfsp=st_as_sf(df,coords = c('LONGITUDE', 'LATITUDE'),crs = 4326)
+    if(dim(df)[1]>0){
+      loccols=turbo(7)[as.numeric(df$ERSCATEGORY)]
+      
+      ## Get spatial ERS data
+      dfsp=st_as_sf(df,coords = c('LONGITUDE', 'LATITUDE'),crs = 4326)
+      
+      ##  heat map setup
+      ## Create kernel density output
+      kde <- bkde2D(as.matrix(df[,c("LONGITUDE","LATITUDE")]),
+                    bandwidth=c(.15, .15), gridsize = c(1000,1000))
+      # Create Raster from Kernel Density output
+      KernelDensityRaster <- raster::raster(list(x=kde$x1 ,y=kde$x2 ,z = kde$fhat))
+      #set low density cells as NA so we can make them transparent with the colorNumeric function
+      KernelDensityRaster@data@values[which(KernelDensityRaster@data@values < 0.05)] <- NA
+      #palRaster <- colorBin("RdGy",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
+      #palRaster <- colorBin("YlGnBu",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
+      palRaster <- colorNumeric("YlGnBu",reverse = TRUE, domain = KernelDensityRaster@data@values, na.color = "transparent")
+      
+    }
     
-    ##  Heatmap setup
-    ## Create kernel density output
-    kde <- bkde2D(as.matrix(df[,c("LONGITUDE","LATITUDE")]),
-                  bandwidth=c(.15, .15), gridsize = c(1000,1000))
-    # Create Raster from Kernel Density output
-    KernelDensityRaster <- raster::raster(list(x=kde$x1 ,y=kde$x2 ,z = kde$fhat))
-    #set low density cells as NA so we can make them transparent with the colorNumeric function
-    KernelDensityRaster@data@values[which(KernelDensityRaster@data@values < 0.05)] <- NA
-    palRaster <- colorBin("RdGy",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
-    palRaster <- colorBin("YlGnBu",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
-    
-    
-    # Create leaflet
-    lngmin=min(df$LONGITUDE[df$LONGITUDE<0],na.rm = TRUE)-0.01
-    lngmax=max(df$LONGITUDE[df$LONGITUDE<0],na.rm = TRUE)+0.01
-    latmin=min(df$LATITUDE[df$LATITUDE>0],na.rm = TRUE)-0.01
-    latmax=max(df$LATITUDE[df$LATITUDE>0],na.rm = TRUE)+0.01
     
     labelscty <- paste(
       "<b>", ctypts1$NAME,"County","</b>",
@@ -519,45 +1024,34 @@ server <- function(input, output,session) {
     bboxa <- st_bbox(statmap1) %>% 
       as.vector()
     
-    ### Get leaflet basemap for genetics
-    basemap <- leaflet() %>%
-      # add different provider tiles
-      addProviderTiles(
-        "OpenStreetMap",
-        # give the layer a name
-        group = "OpenStreetMap"
-      ) %>%
-      addProviderTiles(
-        "Esri.WorldImagery",
-        group = "Esri.WorldImagery"
-      ) %>%
-      # add a layers control
-      addLayersControl(
-        baseGroups = c(
-          "OpenStreetMap", "Esri.WorldImagery"
-        ),
-        # position it on the topleft
-        position = "topleft"
-      )
-    
-    l2= basemap|>
+    l2= leaflet()%>%
+      addTiles(group="OpenStreetMap")%>%
+      addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
       addPolygons(data=ctypts1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
-      addPolygons(data = orvhatch,color = "black",fillColor = "grey",fillOpacity = 0.3,opacity = 0.9,weight = 1.5)%>%
-      addPolygons(data = orv$geometry,color = "black",fillColor = "grey",fillOpacity = 0,opacity = 0.9,weight = 1.5)%>%
+      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
+      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+                  fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
+                  fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addLayersControl(baseGroups = c("OpenStreetMap","Esri.WorldImagery"),
+                       overlayGroups=c("Show ORV"), 
+                       options = layersControlOptions(collapsed = FALSE))%>%
       fitBounds(bboxa[1], bboxa[2], bboxa[3], bboxa[4])
     
     
     
-    if(input$mapheat=="Heatmap"){
+    if(input$mapheat=="Heat map"){
       ## Redraw the map
-      l2=l2%>%
-        addRasterImage(KernelDensityRaster, 
-                       colors = palRaster, 
-                       opacity = .9) %>%
-        addLegend_decreasing(pal = palRaster, 
-                             values = KernelDensityRaster@data@values,
-                             title = "Density of Points (pts/km2)",decreasing = TRUE)
-      
+      if(dim(df)[1]>0){
+        l2=l2%>%
+          addRasterImage(KernelDensityRaster, 
+                         colors = palRaster, 
+                         opacity = .9,
+                         project=TRUE) %>%
+          addLegend_decreasing(pal = palRaster, 
+                               values = KernelDensityRaster@data@values,
+                               title = "Density of Points (pts/km2)",decreasing = TRUE)
+      }
     }
     if(input$mapheat=="County assessment"){
       l2=l2%>%
@@ -575,12 +1069,29 @@ server <- function(input, output,session) {
                              opacity = 1,decreasing = TRUE)
       
     }
-    
+    if(input$mapheat=="County assessment to date"){
+      l2=l2%>%
+        addPolygons(data = ctypts1, 
+                    color = "black",
+                    opacity = 0.9,
+                    fillOpacity = c(.75,0.1,rep(0.75,5))[ctypts1$PtLevProgress+4],
+                    fillColor = classcolorstodate[ctypts1$PtLevProgress+4],
+                    weight  = 0.25,
+                    label =   ~labelscty)%>%
+        addLegend_decreasing("topright", colors = rev(classcolorstodate),
+                             labels = rev(c("Bonus","No ERS","Points needed","On track","Goal met","Goal exceeded")),
+                             title = "ERS assessment to date",
+                             opacity = 1,decreasing = TRUE)
+      
+      
+    }
     if(input$ShowPts=="Yes"){
-      l2<-l2 %>% 
-        addCircleMarkers(
-          data = dfsp,color = "black",
-          popup = ~get_popup_content(erssf),opacity = 0.9,radius = 0.05)
+      if(dim(df)[1]>0){
+        l2<-l2 %>% 
+          addCircleMarkers(
+            data = dfsp,color = "black",
+            popup = ~get_popup_content(erssf),opacity = 0.9,radius = 0.05)
+      }
     }
     
     l2
@@ -590,37 +1101,37 @@ server <- function(input, output,session) {
   output$mapx<-renderLeaflet({
     
     # call reactive map
-    foundational.map()
+    foundational.map1()
     
   })
   
-  
+  ### Option to save the map
   # end of creating user.created.map()
   # create the output file name
   # and specify how the download button will take
   # a screenshot - using the mapview::mapshot() function
   # and save as a PDF
+  
   output$dl <- downloadHandler(
-    filename = function(){paste0(input$staten,"_ERS_map.pdf")}
+    filename = function(){paste0(input$staten,"_ERS_map.png")},
     
-    , content = function(file) {
-      # temporarily switch to the temp dir, in case you do not have write
-      # permission to the current working directory
-      # withProgress(message = 'This takes a few minutes',{
+    content = function(file) {
+      req(foundational.map1())
+      
       progress <- shiny::Progress$new()
       progress$set(message = "Please be patient. This takes a few minutes... ")
       on.exit(progress$close())
-      owd <- setwd(tempdir())
-      on.exit(setwd(owd))
-      saveWidget(foundational.map(), "ERS_state_map.html", selfcontained = TRUE)
-      #webshot("ERS_state_map.html", file = file, cliprect = "viewport")
-      mapshot(foundational.map(),file=file,cliprect="viewport")
-      ### using mapshot we can substitute the above two lines of code
-      # mapshot(foundational.map(), file = file, cliprect = "viewport")
+      
+      Sys.sleep(2)
+      
+      mapshot(foundational.map1(),file=file,cliprect="viewport",delay=10)
     } # end of content() function
   ) # end of downloadHandler() function
   
   
+  ###
+  ### Table of county evaluations shown next to map
+  ###
   output$tablex <- renderDataTable({
     data<-ersdata
     scd1=ctyorv
@@ -661,10 +1172,13 @@ server <- function(input, output,session) {
                               as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
     
     
-    dast=scd1%>%st_drop_geometry()%>%dplyr::select(STATE_NAME,NAME,TierName,Subset,Point_Goal,Points,Points_Needed)%>%
+    dast=scd1%>%st_drop_geometry()%>%
       filter(Points_Needed!="Goal met")%>%
-      arrange(STATE_NAME,NAME,TierName)
-    names(dast)=c("State","County","ERS_Tier","Subset","Point_Goal","Points","Points_Needed")
+      mutate(Subset2=ifelse(is.na(Subset)," ",as.character(Subset)),
+             County_Tier=paste(NAME,TierName,Subset2,sep=" "))%>%
+      arrange(STATE_NAME,County_Tier)%>%
+      dplyr::select(STATE_NAME,County_Tier,Point_Goal,Points,Points_Needed)%>%
+      rename(State=STATE_NAME,Goal=Point_Goal,Needed=Points_Needed)
     dast
     
   })
@@ -773,12 +1287,13 @@ server <- function(input, output,session) {
     scd1$Point_Goal=scd1$PTGoal
     scd1$Points=as.numeric(unlist((NRMPcounty[match(scd1$StCtyTier,NRMPcounty$StCtyTier),"Pts"])))
     scd1$Points[is.na(scd1$Points)]=0
-    scd1$Points_Needed=ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
-                              as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
+    scd1$Points_Needed=ifelse(scd1$Point_Goal==0,"No ERS",
+                              ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
+                                     as.numeric(scd1$Point_Goal-unlist(scd1$Points))))
     
     
     ctymet=length(which(scd1$Points_Needed=="Goal met"))
-    ctyn=length(which(!is.na(scd1$Point_Goal)))
+    ctyn=length(which(scd1$Point_Goal!=0))
     
     valueBox(
       ctymet, paste("# of county-tier polygons where point goal was met out of ",ctyn), icon = icon("face-smile"),
@@ -786,59 +1301,306 @@ server <- function(input, output,session) {
     )
   })
   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ###########################
   ###
-  ### Summary pie plots
+  ###  Map tab version 2
   ###
-  output$PiePlots<-renderPlot({
-    validate(
-      need(input$staten != " ", "Please select a state to view summary plots")
-    )
-    df<-ersdata
-    df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+  ###########################
+  
+  ####
+  ### Map issues tab components
+  ####
+  # Create foundational leaflet map
+  # and store it as a reactive expression
+  foundational.map2 <- reactive({
     
-    df$Points=ersnames[match(df$Category,ersnames$Name),"Points"]
-    catdf=df%>%group_by(Category)%>%
-      summarise(TotalSamples=n(),
-                Pts=sum(Points))%>%ungroup()%>%
-      mutate(SamplePer=round(TotalSamples/sum(TotalSamples)*100,0),
-             PointPer=round(Pts/sum(Pts)*100,0))
-    catdf$Category=factor(catdf$Category,ordered=TRUE,levels=ersnames$Name)
+    data <- ersdata
+    statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
+    ctypts1=ctypts
+    
+    df=data[,c("IDNUMBER","LONGITUDE","LATITUDE","ERSCATEGORY","Category","SPECIES","COUNTY","STATE","STCO","RABIESBRAINRESULTS")]
+    if(input$staten!=" "){
+      df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      statmap1=statmaps[statmaps$STATE_NAME==input$staten,]
+      ctypts1=ctypts[ctypts$STATE_NAME==input$staten,]
+    }
+    df=df[which(!is.na(df$LONGITUDE)),]
+    if(dim(df)[1]>0){
+      loccols=turbo(7)[as.numeric(df$ERSCATEGORY)]
+      
+      ## Get spatial ERS data
+      dfsp=st_as_sf(df,coords = c('LONGITUDE', 'LATITUDE'),crs = 4326)
+      
+      ##  heat map setup
+      ## Create kernel density output
+      kde <- bkde2D(as.matrix(df[,c("LONGITUDE","LATITUDE")]),
+                    bandwidth=c(.15, .15), gridsize = c(1000,1000))
+      # Create Raster from Kernel Density output
+      KernelDensityRaster <- raster::raster(list(x=kde$x1 ,y=kde$x2 ,z = kde$fhat))
+      #set low density cells as NA so we can make them transparent with the colorNumeric function
+      KernelDensityRaster@data@values[which(KernelDensityRaster@data@values < 0.05)] <- NA
+      palRaster <- colorBin("RdGy",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
+      palRaster <- colorBin("YlGnBu",reverse = TRUE, bins = 10, domain = KernelDensityRaster@data@values, na.color = "transparent")
+      
+    }
     
     
-    totpie=ggplot(catdf, aes(x="",y=TotalSamples,fill=Category))+
-      geom_bar(width = 1, stat = "identity")+
-      geom_text(aes(x=1.8,label = paste(SamplePer,"%")), 
-                size = 6,position = position_stack(vjust = 0.5))+
-      coord_polar("y")+
-      theme_void() +
-      theme(axis.text.x=element_blank(),legend.text=element_text(size=20),
-            legend.title =element_text(size=30),
-            plot.title = element_text(size = 30, face = "bold"))+
-      ggtitle("Samples")
+    labelscty <- paste(
+      "<b>", ctypts1$NAME,"County","</b>",
+      "<br>Tier: ",ctypts1$TierName,
+      "<br>Subset: ",ctypts1$Subset,
+      "<br>Point Goal: ", ctypts1$PTGoal,
+      "<br>Points: ", ctypts1$Pts) %>%
+      lapply(htmltools::HTML)
     
-    ptspie=ggplot(catdf, aes(x="",y=Pts,fill=Category))+
-      geom_bar(width = 1, stat = "identity")+
-      geom_text(aes(x=1.8,vjust=c(rep(0,(length(Category)-1)),1),label = paste(PointPer,"%")), 
-                size = 6,position = position_stack(vjust = 0.5))+
-      coord_polar("y")+
-      theme_void() +
-      theme(axis.text.x=element_blank(),legend.text=element_text(size=20),
-            legend.title=element_text(size=30),
-            plot.title = element_text(size = 30, face = "bold"))+
-      ggtitle("Points")
+    bboxa <- st_bbox(statmap1) %>% 
+      as.vector()
     
-    totpie + ptspie +
-      plot_layout(guides = "collect")+
-      plot_annotation(tag_levels = 'A')
+    
+    l2= leaflet()%>%
+      addTiles(group="OpenStreetMap")%>%
+      addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
+      addPolygons(data=ctypts1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
+      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
+      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+                  fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
+                  fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
+      addLayersControl(baseGroups = c("OpenStreetMap","Esri.WorldImagery"),
+                       overlayGroups=c("Show ORV"), 
+                       options = layersControlOptions(collapsed = FALSE))%>%
+      fitBounds(bboxa[1], bboxa[2], bboxa[3], bboxa[4])
+    
+    
+    
+    if(input$mapheat=="Heat map"){
+      ## Redraw the map
+      if(dim(df)[1]>0){
+        l2=l2%>%
+          addRasterImage(KernelDensityRaster, 
+                         colors = palRaster, 
+                         opacity = .9) %>%
+          addLegend_decreasing(pal = palRaster, 
+                               values = KernelDensityRaster@data@values,
+                               title = "Density of Points (pts/km2)",decreasing = TRUE)
+      }
+    }
+    if(input$mapheat=="County assessment"){
+      l2=l2%>%
+        addPolygons(data = ctypts1, 
+                    color = "black",
+                    opacity = 0.9,
+                    fillOpacity = c(.75,0.1,rep(0.75,7))[ctypts1$PtLevs2+5],
+                    fillColor = classcolors2[ctypts1$PtLevs2+5],
+                    weight  = 0.25,
+                    label =   ~labelscty)%>%
+        addLegend_decreasing("topright", colors = rev(classcolors2),
+                             #labels = c("No ERS","Need 50+ points","Need 10+ points","Need 1+ points","Goal met","Good job","Great job","Awesome job!"),
+                             labels = c("Awesome job!","Great job","Goal met","Need 1+ points","Need 10+ points","No ERS","Bonus"),
+                             title = "ERS assessment",
+                             opacity = 1,decreasing = TRUE)
+      
+    }
+    
+    if(input$ShowPts=="Yes"){
+      if(dim(df)[1]>0){
+        l2<-l2 %>% 
+          addCircleMarkers(
+            data = dfsp,color = "black",
+            popup = ~get_popup_content(erssf),opacity = 0.9,radius = 0.05)
+      }
+    }
+    
+    l2
+    
+    
+  }) # end of foundational.map()
+  output$mapx2<-renderLeaflet({
+    
+    # call reactive map
+    foundational.map2()
+    
+  })
+  
+  ### Option to save the map
+  # end of creating user.created.map()
+  # create the output file name
+  # and specify how the download button will take
+  # a screenshot - using the mapview::mapshot() function
+  # and save as a PDF
+  output$dl2 <- downloadHandler(
+    filename = function(){paste0(input$staten,"_ERS_mapv2.png")}
+    
+    , content = function(file) {
+      # temporarily switch to the temp dir, in case you do not have write
+      # permission to the current working directory
+      # withProgress(message = 'This takes a few minutes',{
+      progress <- shiny::Progress$new()
+      progress$set(message = "Please be patient. This takes a few minutes... ")
+      on.exit(progress$close())
+      owd <- setwd(tempdir())
+      on.exit(setwd(owd))
+      saveWidget(foundational.map2(), "ERS_state_mapv2.html", selfcontained = TRUE)
+      #webshot("ERS_state_map.html", file = file, cliprect = "viewport")
+      mapshot(foundational.map2(),file=file,cliprect="viewport")
+      ### using mapshot we can substitute the above two lines of code
+      # mapshot(foundational.map(), file = file, cliprect = "viewport")
+    } # end of content() function
+  ) # end of downloadHandler() function
+  
+  
+  ###
+  ### Table of county evaluations shown next to map
+  ###
+  output$tablex2 <- renderDataTable({
+    data<-ersdata
+    scd1=ctyorv
+    
+    df=data[,c("IDNUMBER","LONGITUDE","LATITUDE","ERSCATEGORY","Category","SPECIES","COUNTY","STATE","STCO","RABIESBRAINRESULTS")]
+    if(input$staten!=" "){
+      df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      scd1=scd1[scd1$STATE_NAME==input$staten,]
+    }
+    df=df[which(!is.na(df$LONGITUDE)),]
+    df$Points=ersnames[match(df$ERSCATEGORY,ersnames$Num),"Points"]
+    
+    ## Need to calculate the points overlapping with polygons as counties are split
+    ##  between high and low priority areas
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
+    
+    ## Trying a join 
+    pwp=st_join(dfsf,scd1)
+    ## 
+    pwp$TierName=ifelse(is.na(pwp$Tier),"None",
+                        ifelse(pwp$Tier==1,"High","Low"))
+    pwp$CtyTier=paste(pwp$NAME,pwp$TierName,sep="-")
+    pwp=pwp%>%
+      mutate(Points=replace_na(Points,0))
+    
+    
+    ## Summarizing data by county-tier designation
+    NRMPcounty=pwp%>%st_drop_geometry%>%
+      group_by(StCtyTier)%>%
+      summarise(Pts=sum(Points))
+    
+    
+    ## see what it looks like
+    scd1$Point_Goal=scd1$PTGoal
+    scd1$Points=as.numeric(unlist((NRMPcounty[match(scd1$StCtyTier,NRMPcounty$StCtyTier),"Pts"])))
+    scd1$Points[is.na(scd1$Points)]=0
+    scd1$Points_Needed=ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
+                              as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
+    
+    
+    dast=scd1%>%st_drop_geometry()%>%
+      mutate(Subset2=ifelse(is.na(Subset)," ",as.character(Subset)),
+             County_Tier=paste(NAME,TierName,Subset2,sep=" "))%>%
+      arrange(STATE_NAME,County_Tier)%>%
+      dplyr::select(STATE_NAME,County_Tier,Point_Goal,Points,Points_Needed)%>%
+      rename(State=STATE_NAME,Goal=Point_Goal,Needed=Points_Needed)
+    dast
+    
   })
   
   
-  output$tableerror<- renderDataTable({
-    ### How many samples needed by county
-    validate(
-      need(input$staten != " ", "Please select a state to view summary table")
+  ###
+  ### Info boxes
+  ###
+  output$totsampsinf <- renderInfoBox({
+    df<-ersdata
+    if(input$staten!=" "){
+      df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      scd1=ctyorv[ctyorv$STATE_NAME==input$staten,]
+    }
+    ctymet=dim(df)[1]
+    
+    infoBox(
+      "Samples collected", ctymet, icon = icon("brain"),
+      color = "navy"
     )
     
+  })
+  
+  output$countyerrorinf <- renderInfoBox({
+    data<-ersdata
+    scd1=ctyorv
+    
+    df=data[,c("IDNUMBER","LONGITUDE","LATITUDE","ERSCATEGORY","Category","SPECIES","COUNTY","STATE","STCO","RABIESBRAINRESULTS")]
+    if(input$staten!=" "){
+      df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      scd1=ctyorv[ctyorv$STATE_NAME==input$staten,]
+    }
+    df=df[which(!is.na(df$LONGITUDE)),]
+    
+    df$Points=ersnames[match(df$ERSCATEGORY,ersnames$Num),"Points"]
+    
+    ## Need to calculate the points overlapping with polygons as counties are split
+    ##  between high and low priority areas
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
+    
+    ## Trying a join 
+    pwp=st_join(dfsf,scd1)
+    ## 
+    pwp$TierName=ifelse(is.na(pwp$Tier),"None",
+                        ifelse(pwp$Tier==1,"High","Low"))
+    pwp$CtyTier=paste(pwp$NAME,pwp$TierName,sep="-")
+    pwp=pwp%>%
+      mutate(Points=replace_na(Points,0))
+    
+    
+    ## Summarizing data by county-tier designation
+    NRMPcounty=pwp%>%st_drop_geometry%>%
+      group_by(StCtyTier)%>%
+      summarise(Pts=sum(Points))
+    
+    
+    ## see what it looks like
+    scd1$Point_Goal=scd1$PTGoal
+    scd1$Points=as.numeric(unlist((NRMPcounty[match(scd1$StCtyTier,NRMPcounty$StCtyTier),"Pts"])))
+    scd1$Points[is.na(scd1$Points)]=0
+    scd1$Points_Needed=ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
+                              as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
+    
+    
+    dast=scd1%>%st_drop_geometry()%>%
+      filter(Points_Needed!="Goal met")%>%
+      dplyr::select(STATE_NAME,NAME,TierName,Point_Goal,Points,Points_Needed)%>%
+      arrange(STATE_NAME,NAME,TierName)%>%
+      rename(State=STATE_NAME,County=NAME,ERS_Tier=TierName,Goal=Point_Goal,
+             Needed=Points_Needed)
+    dast
+    
+    
+    ctymet=pmin(1,sum(dast$Points)/sum(dast$Goal))*100
+    
+    infoBox(
+      "Progress to point goal", paste0(round(ctymet,0), "%"), icon = icon("list-check"),
+      color = "yellow"
+    )
+    
+  })
+  
+  output$countymetinf <- renderInfoBox({
     data<-ersdata
     scd1=ctyorv
     
@@ -876,18 +1638,321 @@ server <- function(input, output,session) {
     scd1$Points[is.na(scd1$Points)]=0
     scd1$Points_Needed=ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
                               as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
+    scd1=scd1|>filter(Point_Goal>0)
     
     
-    dast=scd1%>%st_drop_geometry()%>%dplyr::select(STATE_NAME,NAME,TierName,Point_Goal,Points,Points_Needed)%>%
-      filter(Points_Needed!="Goal met")%>%
+    ctymet=length(which(scd1$Points_Needed=="Goal met"))
+    ctyn=length(which(!is.na(scd1$Point_Goal)))
+    
+    
+    infoBox(
+      "% of county goals met", paste0(round(ctymet/ctyn*100,0), "%"), icon = icon("clipboard-check"),
+      color = "olive"
+    )
+    
+  })
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ##################################
+  ###
+  ###  Summary tab
+  ###
+  ##################################
+  
+  ###
+  ### Summary pie plots
+  ###
+  output$PiePlots<-renderPlot({
+    validate(
+      need(input$staten != " ", "Please select a state to view summary plots")
+    )
+    df<-ersdata
+    df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+    
+    df$Points=ersnames[match(df$Category,ersnames$Name),"Points"]
+    catdf=df%>%
+      mutate(Points=ifelse(ERSCATEGORY==1,14,ifelse(ERSCATEGORY==2,20,
+                                                    ifelse(ERSCATEGORY==3,4,1))),
+             Category=factor(Category,ordered=TRUE,levels=ersnames$Name))%>%
+      group_by(Category)%>%
+      summarise(TotalSamples=n(),
+                Pts=sum(Points),
+                .groups="drop")%>%
+      complete(Category,fill=list(TotalSamples=0,Pts=0))%>%ungroup()%>%
+      mutate(SamplePer=round(TotalSamples/sum(TotalSamples)*100,0),
+             PointPer=round(Pts/sum(Pts)*100,0))
+    
+    
+    ## Getting the plotting offsets
+    df2 <- catdf %>% 
+      mutate(csum = rev(cumsum(rev(SamplePer))), 
+             pos = SamplePer/2 + lead(csum, 1),
+             pos = if_else(is.na(pos), SamplePer/2, pos))
+    df3 <- catdf %>% 
+      mutate(csum = rev(cumsum(rev(PointPer))), 
+             pos = PointPer/2 + lead(csum, 1),
+             pos = if_else(is.na(pos), PointPer/2, pos))
+    
+    totpie=ggplot(catdf, aes(x="",y=SamplePer,fill=Category))+
+      geom_bar(width = 1, stat = "identity")+
+      coord_polar("y")+
+      theme_void() +
+      geom_label_repel(data = df2,
+                       aes(y = pos, label = paste0(round(SamplePer,1), "%")),
+                       size = 6.5, nudge_x = 1, show.legend = FALSE,alpha = c(0.8)) +
+      scale_fill_viridis_d(direction = -1)+
+      theme(axis.text.x=element_blank())+
+      theme(legend.text=element_text(size=15))+
+      ggtitle("Samples")
+    
+    ptspie=ggplot(catdf, aes(x="",y=PointPer,fill=Category))+
+      geom_bar(width = 1, stat = "identity")+
+      geom_label_repel(data = df3,
+                       aes(y = pos, label = paste0(round(PointPer,1), "%")),
+                       size = 6.5, nudge_x = 1, show.legend = FALSE,alpha = c(0.8)) +
+      coord_polar("y")+
+      theme_void() +
+      scale_fill_viridis_d(direction = -1)+
+      theme(axis.text.x=element_blank())+
+      theme(legend.text=element_text(size=15))+
+      ggtitle("Points")
+    
+    
+    totpie + ptspie +
+      plot_layout(guides = "collect")+
+      plot_annotation(tag_levels = 'A')
+  })
+  
+  
+  ###
+  ### Summary bar county area plots
+  ###
+  output$CountyBars<-renderPlot({
+    validate(
+      need(input$staten != " ", "Please select a state to view summary plots")
+    )
+    ctypts1=ctypts[ctypts$STATE_NAME==input$staten,]
+    
+    ###
+    ### Getting and displaying the top five counties and the bottom five
+    ###
+    sortcty=ctypts1%>%st_drop_geometry()%>%
+      arrange(-PtDiff)%>%
+      mutate(Collected=pmin(PTGoal,Pts),
+             Needed=ifelse(PtDiff>0,0,abs(PtDiff)),
+             Above=pmax(0,PtDiff),
+             Subset=as.character(Subset),
+             Subset=replace_na(Subset," "),
+             CtyTier=paste(CtyTier,Subset,sep=" "))%>%
+      dplyr::select(STATE_NAME,CtyTier,TierName,Collected,Needed,Above)
+    
+    
+    ### Take All counties and split them to show counties over in one plot and under in another
+    abovecty=sortcty %>% filter(TierName!="None",Needed==0) %>% 
+      dplyr::select(-STATE_NAME,-TierName)%>%
+      pivot_longer(cols = -CtyTier,names_to = "Type",values_to = "Points")%>%
+      mutate(Type=factor(Type,ordered=TRUE,levels=c("Above","Needed","Collected")))
+    abvpl=ggplot(abovecty,aes(x=reorder(CtyTier,Points),y=Points,fill=Type))+
+      geom_bar(position="stack", stat = "identity",)+
+      scale_fill_manual(values = c("#FECF49","#7084E5","black"),name="Progress towards goal")+
+      theme_classic()+ggtitle("Counties where point goals are met")+
+      coord_flip()+xlab("County - ERS tier")+
+      theme(axis.text=element_text(size=18),
+            axis.title=element_text(size=18,face="bold"))+
+      theme(legend.text=element_text(size=18))
+    
+    
+    belowcty=sortcty %>% filter(TierName!="None",Needed>0) %>% 
+      dplyr::select(-STATE_NAME,-TierName)%>%
+      pivot_longer(cols = -CtyTier,names_to = "Type",values_to = "Points")%>%
+      mutate(Type=factor(Type,ordered=TRUE,levels=c("Above","Needed","Collected")))
+    blpl=ggplot(belowcty,aes(x=reorder(CtyTier,Points),y=Points,fill=Type))+
+      geom_bar(position="stack", stat = "identity",)+
+      scale_fill_manual(values = c("#FECF49","#7084E5","black"),name="Progress towards goal")+
+      theme_classic()+ggtitle("Counties where points are still needed")+
+      coord_flip()+xlab("County - ERS tier")+
+      theme(axis.text=element_text(size=18),
+            axis.title=element_text(size=18,face="bold"))+
+      theme(legend.text=element_text(size=18))
+    
+    
+    if(dim(abovecty)[1]==0){
+      blpl
+    }else{
+      if(dim(belowcty)[1]==0){
+        abvpl
+      }else{
+        (abvpl|blpl)+
+          plot_layout(guides = "collect")&
+          theme(legend.position='bottom')
+      }
+    }
+    
+    
+  })
+  
+  
+  
+  output$tableerror<- renderDataTable({
+    ### How many samples needed by county
+    validate(
+      need(input$staten != " ", "Please select a state to view summary table")
+    )
+    
+    data<-ersdata
+    scd1=ctyorv
+    
+    df=data[,c("IDNUMBER","LONGITUDE","LATITUDE","ERSCATEGORY","Category",
+               "SPECIES","COUNTY","STATE","STCO","RABIESBRAINRESULTS")]
+    if(input$staten!=" "){
+      df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      scd1=ctyorv[ctyorv$STATE_NAME==input$staten,]
+    }
+    df=df[which(!is.na(df$LONGITUDE)),]
+    df$Points=ersnames[match(df$ERSCATEGORY,ersnames$Num),"Points"]
+    
+    ## Need to calculate the points overlapping with polygons as counties are split
+    ##  between high and low priority areas
+    dfsf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=4326)
+    
+    ## Trying a join 
+    pwp=st_join(dfsf,scd1)
+    ## 
+    pwp$TierName=ifelse(is.na(pwp$Tier),"None",
+                        ifelse(pwp$Tier==1,"High","Low"))
+    pwp$CtyTier=paste(pwp$NAME,pwp$TierName,sep="-")
+    pwp=pwp%>%
+      mutate(Points=replace_na(Points,0))
+    
+    
+    ## Summarizing data by county-tier designation
+    NRMPcounty=pwp%>%st_drop_geometry%>%
+      group_by(StCtyTier)%>%
+      summarise(Pts=sum(Points))
+    
+    
+    ## see what it looks like
+    scd1$Point_Goal=scd1$PTGoal
+    scd1$Points=as.numeric(unlist((NRMPcounty[match(scd1$StCtyTier,NRMPcounty$StCtyTier),"Pts"])))
+    scd1$Points[is.na(scd1$Points)]=0
+    scd1$Points_Needed=ifelse(scd1$Point_Goal<=scd1$Points,"Goal met",
+                              as.numeric(scd1$Point_Goal-unlist(scd1$Points)))
+    
+    
+    dast=scd1%>%st_drop_geometry()%>%dplyr::select(STATE_NAME,NAME,TierName,Subset,Point_Goal,Points,Points_Needed)%>%
+      #filter(Points_Needed!="Goal met")%>%
       arrange(STATE_NAME,NAME,TierName)
-    names(dast)=c("State","County","ERS_Tier","Point_Goal","Points","Points_Needed")
+    names(dast)=c("State","County","ERS_Tier","Subset","Point_Goal","Points","Points_Needed")
     dast$Points_Needed[is.na(dast$Points_Needed)]="No ERS needed"
     data.table(dast)
     
   })
   
-  ### Error results tab
+  
+  
+  
+  
+  
+  
+  
+  
+  ##################################
+  ###
+  ###  Time trend tab
+  ###
+  ##################################
+  
+  ###
+  ### Time trend plot
+  ###
+  output$ProgressPlot<-renderPlot({
+    validate(
+      need(input$staten != " ", "Please select a state to view time plots")
+    )
+    ##
+    oldstate=old%>%filter(STATE_NAME==input$staten)
+    
+    ## Make summary data set
+    ossum=oldstate %>% 
+      group_by(Year,TilNow) %>% 
+      summarise(Samples=n(),
+                Points=sum(Point)) 
+    
+    stgoal=statsamp$PointGoal[which(statsamp$STATE_NAME==input$staten)]
+    
+    ossum$TilNow=factor(ossum$TilNow, ordered=TRUE,levels=c("Total","Year To Date"))
+    
+    
+    ### Plot this out
+    tplt=ggplot(ossum,aes(x=as.numeric(Year),y=Points,fill=TilNow))+
+      geom_col()+
+      scale_fill_manual(values = c("grey","royalblue4"),name=" ")+
+      theme_classic()+xlab("Year")+
+      geom_hline(yintercept = stgoal,color="red",lwd=1.5)+
+      theme(axis.text=element_text(size=18),
+            axis.title=element_text(size=18,face="bold"))+
+      theme(legend.text=element_text(size=18))
+    
+    tplt
+    
+  })
+  
+  
+  ###
+  ### Time trend plot
+  ###
+  output$SpatialProgressPlot<-renderPlot({
+    validate(
+      need(input$staten != " ", "Please select a state to view time plots")
+    )
+    
+    ## Visualize old data for a state
+    stoldsum=oldstsum %>% filter(STATE_NAME==input$staten) %>% 
+      mutate(New=ifelse(Year=="2025","Yes","No"))
+    
+    ggplot(stoldsum,aes(x=as.numeric(Year),y=PercentMet,fill=New))+
+      geom_col(show.legend = FALSE)+
+      ylab("Percent of county areas with goals met")+
+      ylim(c(0,100))+xlab("Year")+
+      scale_fill_manual(values=c("grey25","aquamarine"))+
+      theme_classic()+
+      theme(axis.text=element_text(size=18),
+            axis.title=element_text(size=18,face="bold"))+
+      theme(legend.text=element_text(size=18))+
+      geom_hline(yintercept = 100,color="red",lwd=1.5)
+    
+    
+  })
+  
+  
+  
+  
+  
+  
+  
+  
+  #########################################
+  ###
+  ### State summary tab
+  ###
+  #########################################
+  
+  ### State results tab
   output$stateneed <- renderDataTable({
     ### How many samples needed by state
     ctyorv1=ctyorv%>%st_drop_geometry()%>%
@@ -908,18 +1973,18 @@ server <- function(input, output,session) {
   
   
   
-  ######
+  ########################################
   ###
-  ### Genetic tab elements
+  ### Genetic tab elements v1
   ###
-  ######
+  ########################################
   output$gensampsprev <- renderValueBox({
     if(input$staten!=" "){
       gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
     }
     ctypre=dim(gen)[1]
     valueBox(
-      ctypre, "# of previous genetic samples", 
+      ctypre, "# of archived genetic samples", 
       icon = icon("thumbtack"),
       color = "olive"
     )
@@ -949,7 +2014,7 @@ server <- function(input, output,session) {
     if(input$staten!=" "){
       gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
     }
-    gencounty=gen|>
+    gencounty=gen%>%
       group_by(COUNTY)%>%
       summarise(PreSamples=length(which(Sample=="Processed")), 
                 NewSamples=length(which(Sample=="New")), 
@@ -971,38 +2036,23 @@ server <- function(input, output,session) {
   genetic.map <- reactive({
     ### 
     statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
-    uscd1=uscd
-    
+    ctyorv1=ctyorv
+    capc1=capc
+    gen1=gen
     ### Reduce data to state of interest
     if(input$staten!=" "){
-      gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
+      gen1=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
       statmap1=statmaps[statmaps$STATE_NAME==input$staten,]
-      uscd1=uscd[uscd$STATE_NAME==input$staten,]
+      ctyorv1=ctyorv[ctyorv$STATE_NAME==input$staten,]
+      capc1=capc[capc$STATE_NAME==input$staten,]
     }
+    capc1=st_transform(capc1,st_crs(ctyorv))
     
-    # if(staten!=" "){
-    #   gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==staten),"StateAbb"]),]
-    #   statmap1=statmaps[statmaps$STATE_NAME==staten,]
-    #   uscd1=uscd[uscd$STATE_NAME==staten,]
-    # }
-    
-    gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = 4326)
-    uscd1=st_transform(uscd1,crs = 4326)
-    statmap1=st_transform(statmap1,crs=4326)
-    
-    ## Combine the county shapefile and the genetic points data
-    ctygen=st_intersects(uscd1,gensf)
-    uscd1$GenPts=sapply(ctygen,length)
-    uscd1$PtLevs=ifelse(uscd1$GenPts==0,0,
-                        ifelse(uscd1$GenPts<4,1,
-                               ifelse(uscd1$GenPts<10,2,
-                                      ifelse(uscd1$GenPts<30,3,4))))
-    uscd1$TargetGen=10
     
     ##
-    ##  Heatmap setup
+    ##  heat map setup
     ## Create kernel density output
-    kdeg <- bkde2D(as.matrix(gen[,c("LONGITUDE","LATITUDE")]),
+    kdeg <- bkde2D(as.matrix(gen1[,c("LONGITUDE","LATITUDE")]),
                    bandwidth=c(.15, .15), gridsize = c(1000,1000))
     # Create Raster from Kernel Density output
     KernelDensityRasterg <- raster::raster(list(x=kdeg$x1 ,y=kdeg$x2 ,z = kdeg$fhat))
@@ -1014,28 +2064,30 @@ server <- function(input, output,session) {
       as.vector()
     #
     labelsgencty <- paste(
-      "<b>", uscd1$NAME,"County","</b>",
-      "<br>Target # of samples: ", uscd1$TargetGen,
-      "<br># of samples: ", uscd1$GenPts) %>%
+      "<b>", ctyorv1$NAME,"County","</b>",
+      "<br>Tier: ",ctyorv1$TierName,
+      "<br>Subset: ",ctyorv1$Subset,
+      "<br>Target # of samples: ", ctyorv1$GeneticGoal,
+      "<br># of samples: ", ctyorv1$GenPts) %>%
       lapply(htmltools::HTML)
     
     ### Get leaflet basemap for genetics
-    g2= leaflet()|>
-      addTiles(group="OpenStreetMap")|>
-      addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")|>
-      addPolygons(data=uscd1$geometry,color = "black",weight=0.7,fillOpacity = 0)|>
-      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)|>
+    g2= leaflet()%>%
+      addTiles(group="OpenStreetMap")%>%
+      addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
+      addPolygons(data=ctyorv1$geometry,color = "black",weight=0.7,fillOpacity = 0)%>%
+      addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
       addPolygons(data = orvhatch,color = "black",fillColor = "grey",
                   fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
                   fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
       addLayersControl(baseGroups = c("OpenStreetMap","Esri.WorldImagery"),
                        overlayGroups=c("Show ORV"), 
-                       options = layersControlOptions(collapsed = FALSE))|>
+                       options = layersControlOptions(collapsed = FALSE))%>%
       fitBounds(bboxg[1], bboxg[2], bboxg[3], bboxg[4])
     
     
-    if(input$mapheatgen=="Heatmap"){
+    if(input$mapheatgen=="Heat map"){
       ## Redraw the map
       g2=g2%>%
         addRasterImage(KernelDensityRasterg, 
@@ -1048,26 +2100,41 @@ server <- function(input, output,session) {
     }
     if(input$mapheatgen=="County assessment"){
       g2=g2%>%
-        addPolygons(data = uscd1, 
-                    color = c("black","red")[uscd1$HighPriority+1],
+        addPolygons(data = ctyorv1, 
+                    color = c("black","white")[ctyorv1$GenPriority],
                     opacity = 0.9,
                     fillOpacity = 0.7,
-                    fillColor = viridis(5,option="E")[uscd1$PtLevs+1],
-                    weight  = c(0.25,2)[uscd1$HighPriority+1],
+                    fillColor = gencolors[ctyorv1$GenPtLev],
+                    weight  = c(0.25,2)[ctyorv1$GenPriority+1],
                     label =   ~labelsgencty)%>%
-        addLegend_decreasing("topright", colors = rev(viridis(5,option="E")),
-                             labels = c(">30 samples","10-29 samples","4-9 samples","1-3 samples","No samples"),
-                             title = "Genetic samples collected",
-                             opacity = 1,decreasing = TRUE)
+        addLegend_decreasing("topright", colors = rev(gencolors),
+                             labels = c("More spatial coverage needed","10+ samples needed",
+                                        "1+ samples needed","Genetic goal met","Lower priority"),
+                             title = "Genetic evaluation",
+                             opacity = 1,decreasing = FALSE) %>% 
+        addLegendCustom("topright",
+                        colors="#E0D9CA", 
+                        labels = c("Priority 1","Priority 2"),
+                        sizes = 20, 
+                        shapes = "square", 
+                        borders = c("black","white"))
       
     }
-    
+    if(input$mapheatgen=="Spatial gaps"){
+      g2=g2 %>% 
+        addPolygons(data=capc1,
+                    color = "steelblue",
+                    opacity = 0.8,
+                    fillOpacity=0.8,
+                    weight=0.25)
+      
+    }
     if(input$ShowPtsgen=="Yes"){
       g2<-g2 %>% 
         addCircleMarkers(
           data = gensf,
           color = ifelse(gensf$Sample=="New","red","black"),
-          popup = ~get_genetic_popup_content(gensf),opacity = 0.9,radius = 0.05)|>
+          popup = ~get_genetic_popup_content(gensf),opacity = 0.9,radius = 0.05)%>%
         addLegend("topright",colors=c("red","black"),labels=c("New","Archived"),
                   title="Genetics samples",opacity=1)
     }
@@ -1088,28 +2155,62 @@ server <- function(input, output,session) {
   output$tablegen <- renderDataTable({
     
     statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
-    uscd1=uscd
+    ctyorv1=ctyorv
     
     ### Reduce data to state of interest
     if(input$staten!=" "){
       gen=gen[which(gen$STATE==rabiestates[which(rabiestates$StateName==input$staten),"StateAbb"]),]
       statmap1=statmaps[statmaps$STATE_NAME==input$staten,]
-      uscd1=uscd[uscd$STATE_NAME==input$staten,]
+      ctyorv1=ctyorv[ctyorv$STATE_NAME==input$staten,]
     }
     
     
     ## Summarizing data by county-tier designation
-    gencounty=gen|>
-      group_by(COUNTY)%>%
-      summarise(Prepro_Samples=length(which(Sample=="Processed")),
-                New_Samples=length(which(Sample=="New")),
-                Needed=ifelse((10-n())>0,10-n(),0))
+    gencounty=ctyorv1%>%st_drop_geometry() %>% 
+      dplyr::select(STATE_NAME,NAME,TierName,Subset,GeneticGoal,GenPts,GenLev)%>%
+      mutate(Subset=as.character(Subset),
+             Subset=(replace_na(Subset," "))) %>% 
+      rename(State=STATE_NAME,County=NAME,ERS_Tier=TierName,Goal=GeneticGoal,Samples=GenPts,Status=GenLev)
     
     gencounty
     
   })
   
+  output$gendl <- downloadHandler(
+    filename = function(){paste0(input$staten,"_genetic_map.png")}
+    
+    , content = function(file) {
+      # temporarily switch to the temp dir, in case you do not have write
+      # permission to the current working directory
+      # withProgress(message = 'This takes a few minutes',{
+      progress <- shiny::Progress$new()
+      progress$set(message = "Please be patient. This takes a few minutes... ")
+      on.exit(progress$close())
+      owd <- setwd(tempdir())
+      on.exit(setwd(owd))
+      saveWidget(genetic.map(), "Genetic_state_map.html", selfcontained = TRUE)
+      #webshot("ERS_state_map.html", file = file, cliprect = "viewport")
+      mapshot(genetic.map(),file=file,cliprect="viewport")
+      ### using mapshot we can substitute the above two lines of code
+      # mapshot(foundational.map(), file = file, cliprect = "viewport")
+    } # end of content() function
+  ) # end of downloadHandler() function
   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ##########################################
+  ###
+  ###  Report generator code
+  ###
+  ##########################################
   
   ############
   ###
