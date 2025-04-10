@@ -380,6 +380,8 @@ ctyorv$GenSampsNew=sapply(ctyersgen,length)
 
 
 ###
+statmaps=sf::read_sf("www/states.shp")
+statmaps=st_transform(statmaps,crs=4326 )
 statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
 
 ##
