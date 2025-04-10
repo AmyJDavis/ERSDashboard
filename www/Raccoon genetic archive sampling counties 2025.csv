@@ -1,0 +1,287 @@
+State,County,ERS_Tiers,Samples_needed,County_area,Priority,Notes
+Alabama,Bibb,High,20,Central and east,1,
+Alabama,Blount,High,8,4 southwest 4 northeast,2,"Along Highway 278 in NE, between Highways 79 and 31 in the SW"
+Alabama,Calhoun,Low,20,Throughout ,1,
+Alabama,Chambers,None,20,Throughout ,1,
+Alabama,Cherokee,High,20,Throughout ,1,
+Alabama,Cherokee,Low,20,Throughout ,1,
+Alabama,Chilton,High,20,Throughout ,1,
+Alabama,Choctaw,High,10,Throughout ,2,
+Alabama,Clarke,High,10,Throughout ,2,
+Alabama,Clay,Low,20,Throughout ,1,
+Alabama,Cleburne,Low,20,Throughout ,1,
+Alabama,Colbert,None,8,"5 in west, 3 in east",2,"West and east of Highway 43, perhaps aling Highway 72"
+Alabama,Conecuh,Low,10,Throughout ,2,
+Alabama,Coosa,Low,20,Throughout ,1,
+Alabama,Cullman,High,8,45 west and 3 east,1,West of I-65 and east of Highway 31
+Alabama,DeKalb,High,5,Southwest,1,Perhaps along Highway 68 and 75N
+Alabama,Elmore,Low,20,Throughout ,1,
+Alabama,Fayette,High,5,East,2,Along and east of Highways 43 and 13N
+Alabama,Franklin,None,10,Throughout ,2,
+Alabama,Jackson,High,5,Northwest,2,Northwest of Highway 72
+Alabama,Jefferson,High,6,Northwest,1,Northwest of I-20 and I-59
+Alabama,Lauderdale,High,10,Throughout ,2,
+Alabama,Lawrence,High,10,North ,2,Along and north of Highway 157
+Alabama,Limestone,High,5,North,2,Along and north of Highway 72
+Alabama,Madison,High,5,North,2,North along Highway 231
+Alabama,Marengo,High,10,Throughout ,2,
+Alabama,Marion,None,8,West and northeast,2,4 west of Highway 43 and 4 north of Highway 278
+Alabama,Morgan,High,4,East,2,East of I-65
+Alabama,Perry,High,10,Throughout ,1,
+Alabama,Randolph,Low,20,Throughout ,1,
+Alabama,Randolph,None,10,Throughout ,1,
+Alabama,Shelby,High,8,Throughout ,1,
+Alabama,St. Clair,High,5,Northeast,1,
+Alabama,Talladega,Low,20,Throughout ,1,
+Alabama,Tallapoosa,Low,20,Throughout ,1,
+Alabama,Tuscaloosa,High,5,Northeast,1,
+Alabama,Walker,High,8,4 west and 4 southeast,1,
+Alabama,Washington,High,10,Throughout ,2,
+Alabama,Wilcox,High,10,Throughout ,2,
+Alabama,Winston,High,5,Southeast,2,
+Alabama,Winston,None,5,Throughout ,2,South of highway 278
+Georgia,Barrow,None,10,Throughout ,2,
+Georgia,Bartow,Low,10,Throughout ,1,
+Georgia,Carroll,Low,15,Throughout ,1,
+Georgia,Chattooga,High,5,Throughout ,2,
+Georgia,Cherokee,Low,5,Northeastern,2,East of I-575
+Georgia,Cobb,Low,10,Throughout ,1,
+Georgia,DeKalb,Low,10,Throughout ,2,
+Georgia,DeKalb,None,10,Throughout ,2,
+Georgia,Douglas,Low,10,Throughout ,2,
+Georgia,Fannin,High,6,West and south,1,West and south of highway 76
+Georgia,Floyd,High,5,Western,1,West of highway 27
+Georgia,Floyd,Low,10,Throughout ,1,
+Georgia,Franklin,Low,10,Throughout ,2,
+Georgia,Fulton,Low,20,Throughout ,2,
+Georgia,Fulton,None,10,Throughout ,2,
+Georgia,Gordon,High,5,Central and Southwest,2,
+Georgia,Gwinnett,Low,10,South and Central,2,South of I-85
+Georgia,Gwinnett,None,10,Throughout ,2,
+Georgia,Habersham,Low,10,Throughout ,1,
+Georgia,Hall,Low,7,North and Southeast,1,"Along I-985, also north and south east of the interstate"
+Georgia,Haralson,Low,10,Throughout ,1,
+Georgia,Hart,Low,10,Throughout ,2,
+Georgia,Lumpkin,Low,10,Throughout ,1,
+Georgia,Paulding,Low,10,Throughout ,1,
+Georgia,Pickens,High,5,Throughout ,1,
+Georgia,Pickens,Low,10,Throughout ,1,
+Georgia,Rabun,High,10,Throughout ,1,
+Georgia,Rabun,Low,10,Throughout ,1,
+Georgia,Stephens,Low,10,Throughout ,1,
+Georgia,Towns,High,10,Throughout ,1,
+Georgia,White,Low,10,Throughout ,1,
+Kentucky,Bell,None,10,Throughout,2,
+Kentucky,Floyd,None,10,Throughout,2,
+Kentucky,Harlan,None,20,Throughout,1,
+Kentucky,Knott,None,10,Throughout,2,
+Kentucky,Leslie,None,10,Throughout,2,
+Kentucky,Letcher,High,10,Throughout,1,
+Kentucky,Letcher,None,10,Throughout,1,
+Kentucky,Martin,None,10,Throughout,2,
+Kentucky,Perry,None,10,Throughout,2,
+Kentucky,Pike,High,20,Throughout,1,
+Kentucky,Pike,None,10,Throughout,1,
+Maine,Aroostook,High-1,10,Throughout,1,"Raccoon and road deisities are low, but any samples help"
+Maine,Aroostook,High-2,5,Throughout,1,"Raccoon and road deisities are low, but any samples help"
+Maine,Cumberland,Low,5,Throughout,2,
+Maine,Franklin,Low,5,Throughout,2,
+Maine,Knox,None,5,Throughout,2,
+Maine,Lincoln,None,5,Throughout,2,
+Maine,Oxford,High,5,Throughout,1,"Raccoon and road deisities are low, but any samples help"
+Maine,Oxford,Low,7,Central and west,2,
+Maine,Penobscot,High,5,Noth and west,2,"Raccoon and road deisities are low, but any samples help"
+Maine,Penobscot,Low,5,South and east,2,"Raccoon and road deisities are low, but any samples help"
+Maine,Piscataquis,High,10,Throughout,2,"Raccoon and road deisities are low, but any samples help"
+Maine,Piscataquis,Low,3,Northeast ,2,"Raccoon and road deisities are low, but any samples help"
+Maine,Somerset,High,10,Throughout,1,"Raccoon and road deisities are low, but any samples help"
+Maine,Somerset,Low,5,Throughout,2,
+Maine,Washington,Low,10,Throughout,1,
+Maine,Washington,None,10,Throughout,1,
+Massachusetts,Berkshire,None,8,Throughout,1,
+Massachusetts,Bristol,Low,6,3 Northwest and 3 southwest,1,
+Massachusetts,Franklin,None,8,Throughout,1,
+Massachusetts,Hampden,None,6,"3 west end, 3 east end",2,
+Massachusetts,Hampshire,None,5,Center and west,1,
+Massachusetts,Worcester,Low,5,North ,2,
+Massachusetts,Worcester,None,10,Northwest,1,
+Mississippi,Alcorn,None,5,Throughout,2,
+Mississippi,Clarke,High,5,Throughout,1,
+Mississippi,Clarke,None,5,Throughout,1,
+Mississippi,Clay,None,5,Throughout,2,
+Mississippi,George,High,5,Throughout,1,
+Mississippi,Greene,High,10,Throughout,1,
+Mississippi,Itawamba,None,5,Throughout,2,
+Mississippi,Jackson,High,10,Throughout,1,
+Mississippi,Jasper,None,5,Throughout,2,
+Mississippi,Jones,None,5,Throughout,2,
+Mississippi,Kemper,None,10,Throughout,1,
+Mississippi,Lauderdale,None,10,Throughout,1,
+Mississippi,Lee,None,5,Throughout,2,
+Mississippi,Lowndes,None,5,Throughout,2,
+Mississippi,Monroe,None,5,Throughout,2,
+Mississippi,Neshoba,None,5,Throughout,2,
+Mississippi,Newton,None,5,Throughout,2,
+Mississippi,Noxubee,None,5,Throughout,2,
+Mississippi,Perry,None,10,Throughout,1,
+Mississippi,Prentiss,None,5,Throughout,2,
+Mississippi,Tishomingo,None,5,Throughout,2,
+Mississippi,Wayne,High,5,Throughout,1,
+Mississippi,Wayne,None,5,Throughout,1,
+New Hampshire,Carroll,Low,8,North and east,2,North and east of highway 16
+New Hampshire,Cheshire,None,10,Throughout,2,
+New Hampshire,Coos,High,10,North,1,North of Highway 26 and near Canadian border
+New Hampshire,Coos,Low,8,North,1,"3 East and 3 west along highway 2, 3 south along road 16"
+New Hampshire,Grafton,Low,5,North,1,"North of road 25A and west of I-93, in and around ORV zone"
+New Hampshire,Hillsborough,None,10,Throughout,2,
+New Hampshire,Merrimack,None,5,Throughout,2,North of I-89 and west of I-93
+New Hampshire,Rockingham,None,10,Throughout,2,
+New Hampshire,Strafford,None,10,Throughout,2,
+New Hampshire,Sullivan,Low,10,Throughout,2,
+New Hampshire,Sullivan,None,10,Throughout,2,
+New York,Bronx,None,10,Throughout,2,"Urban habitats require more samples due, based on possible density"
+New York,Dutchess,None,6,Center and East,2,
+New York,Essex,High,5,Eastern,1,"Raccoon density is low, any samples help, east of  I-87"
+New York,Essex,Low,5,Eastern,1,"Raccoon density is low, any samples help, east of  I-87"
+New York,Franklin,High-1,5,South,1,"Raccoon density is low, any samples help"
+New York,Franklin,High-2,5,South,1,"Raccoon density is low, any samples help"
+New York,Hamilton,Low,10,North and west,1,"Raccoon density is low, any samples help"
+New York,Hamilton,None,5,Throughout,1,"Raccoon density is low, any samples help"
+New York,Herkimer,Low,5,North,1,"Raccoon density is low, any samples help"
+New York,Herkimer,None,5,Throughout,2,
+New York,Kings,None,10,Throughout,2,"Urban habitats require more samples due, based on possible density"
+New York,Nassau,None,5,Throughout,1,
+New York,New York,None,5,Throughout,2,
+New York,Orange,None,10,Throughout,2,
+New York,Putnam,None,5,Throughout,2,
+New York,Queens,None,10,Throughout,2,"Urban habitats require more samples due, based on possible density"
+New York,Richmond,None,5,Throughout,2,
+New York,Rockland,None,5,Throughout,2,
+New York,St. Lawrence,High-1,5,Southeastern corner,1,"Raccoon density is low, any samples help"
+New York,St. Lawrence,High-2,5,Southeastern corner,1,"Raccoon density is low, any samples help"
+New York,Suffolk,None,8,Throughout,1,
+New York,Sullivan,None,10,Throughout,2,
+New York,Ulster,None,9,Throughout,2,
+New York,Westchester,None,7,Center and south,2,
+North Carolina,Alexander,Low,10,Throughout,2,
+North Carolina,Alexander,None,5,Throughout,2,
+North Carolina,Alleghany,Low,10,Throughout,1,
+North Carolina,Buncombe,High,5,Eastern,1,East of Asheville
+North Carolina,Caldwell,Low,10,Throughout,1,
+North Carolina,Catawba,Low,10,Throughout,2,
+North Carolina,Catawba,None,10,Throughout,2,
+North Carolina,Cleveland,Low,10,Throughout,1,
+North Carolina,Cleveland,None,10,Throughout,2,
+North Carolina,Gaston,None,10,Throughout,2,
+North Carolina,Graham,High,10,Throughout,1,
+North Carolina,Haywood,High,5,Northwestern,1,Along and around I-40
+North Carolina,Jackson,High,10,Southeastern,1,Southeast of Highway 23
+North Carolina,Lincoln,Low,10,Throughout,2,
+North Carolina,Lincoln,None,10,Throughout,2,
+North Carolina,Rutherford,Low,10,Northern,1,North of Highway 74
+North Carolina,Swain,High,10,Northern,1,West of ORV zone
+North Carolina,Transylvania,High,10,Throughout,1,
+North Carolina,Transylvania,Low,10,Throughout,1,
+North Carolina,Wilkes,Low,10,Throughout,1,
+Ohio,Belmont,High,10,Eastern,1,East of Lloydsville
+Ohio,Jefferson,High,10,Throughout,1,
+Ohio,Knox,None,10,Throughout,2,
+Ohio,Lorain,None,5,Western,2,West of Elyria
+Ohio,Meigs,None,5,Throughout,2,
+Ohio,Monroe,High,10,Throughout,1,
+Ohio,Richland,None,10,Throughout,2,
+Pennsylvania,Allegheny,High,60,Throughout,1,"In and around Pittsburgh; 20 urban, 20 suburban, and 20 rural"
+Pennsylvania,Bedford,None,7,Throughout,2,
+Pennsylvania,Cameron,None,9,Throughout,2,
+Pennsylvania,Crawford,High,10,West and south,1,
+Pennsylvania,Crawford,Low,10,East,1,East of Highway 6
+Pennsylvania,Elk,None,9,Throughout,2,
+Pennsylvania,Erie,Low,5,Eastern,1,East of highway 19
+Pennsylvania,Forest,Low,5,Northeastern,1,
+Pennsylvania,Forest,None,5,Northern,2,
+Pennsylvania,Jefferson,Low,10,Throughout,2,
+Pennsylvania,Jefferson,None,9,Throughout,2,
+Pennsylvania,McKean,None,7,Throughout,2,
+Pennsylvania,Potter,None,9,Throughout,2,
+Pennsylvania,Somerset,Low,10,Throughout,1,
+Pennsylvania,Somerset,None,10,Throughout,2,
+Pennsylvania,Warren,Low,5,Southern,1,South of highway 6
+Pennsylvania,Warren,None,5,Southern,2,South of highway 6
+South Carolina,Abbeville,None,10,Throughout,1,
+South Carolina,Anderson,Low,10,Throughout,1,
+South Carolina,Greenville,Low,10,Throughout,1,
+South Carolina,Laurens,None,10,Throughout,1,
+South Carolina,Oconee,Low,10,Throughout,1,
+South Carolina,Pickens,Low,10,Throughout,1,
+South Carolina,Spartanburg,None,10,Throughout,1,
+Tennessee,Bradley,High,10,Throughout,1,
+Tennessee,Carter,High,10,Throughout,1,
+Tennessee,Cocke,High,10,Throughout,1,
+Tennessee,Greene,High,15,Throughout,1,
+Tennessee,Hamblen,High,10,Throughout,1,
+Tennessee,Hawkins,High,10,Throughout,1,
+Tennessee,McMinn,High,15,Throughout,1,
+Tennessee,Monroe,High,10,Throughout,1,
+Tennessee,Polk,High,10,Throughout,1,
+Tennessee,Sevier,High,10,Throughout,1,
+Tennessee,Sullivan,High,10,Throughout,1,
+Tennessee,Unicoi,High,10,Throughout,1,
+Tennessee,Washington,High,10,Throughout,1,
+Vermont,Addison,Low,10,Central and south,1,Souht of Bristol
+Vermont,Bennington,None,10,Northwest and southeast,2,"5 in each corner, NW and SE"
+Vermont,Essex,High,10,North and south,1, 5 north of Route 105 and 5 south near highway 2
+Vermont,Orange,Low,8,East,1,East of I-89
+Vermont,Orleans,High,5,West central,1,Along Highway 100
+Vermont,Rutland,Low,10,Throughout,2,
+Vermont,Rutland,None,5,Throughout,2,
+Vermont,Washington,High,8,East and west ends,1,4 at each ed of the county
+Vermont,Windham,None,8,North and south,2,Split samples among the northern and southern ends
+Vermont,Windsor,Low,10,Throughout,2,
+Vermont,Windsor,None,5,South and Northeast,2,5 in each area
+Virginia,Alleghany,Low,5,Throughout,1,
+Virginia,Amherst,None,10,Throughout,2,
+Virginia,Bath,Low,10,Throughout,1,
+Virginia,Bedford,None,7,Throughout,2,
+Virginia,Botetourt,Low,10,Throughout,1,
+Virginia,Buchanan,High,5,Throughout,1,
+Virginia,Carroll,Low,10,Throughout,1,
+Virginia,Craig,Low,5,Throughout,1,
+Virginia,Dickenson,High,5,Throughout,1,
+Virginia,Grayson,Low,10,Throughout,1,
+Virginia,Highland,Low,5,Throughout,1,
+Virginia,Lee,High,5,Throughout,1,
+Virginia,Lee,None,5,Throughout,2,
+Virginia,Patrick,Low,5,Throughout,1,
+Virginia,Patrick,None,5,Throughout,2,
+Virginia,Pulaski,Low,5,Throughout,1,
+Virginia,Rockbridge,Low,5,Throughout,1,
+West Virginia,Boone,High,10,Throughout,2,East of Highway 119
+West Virginia,Boone,None,5,Throughout,2,
+West Virginia,Cabell,None,10,Throughout,2,
+West Virginia,Clay,High,5, ,1,
+West Virginia,Grant,Low,10,Throughout,1,
+West Virginia,Greenbrier,High,5,Western,1,West of highway 219 and north of I-64
+West Virginia,Hampshire,None,10,Throughout,2,
+West Virginia,Hardy,Low,10,Throughout,2,
+West Virginia,Hardy,None,10,Throughout,2,
+West Virginia,Kanawha,High,5,Northeastern,2,Northeast of I-64
+West Virginia,Kanawha,None,10,Throughout,2,
+West Virginia,Lincoln,None,10,Throughout,2,
+West Virginia,Logan,High,10,Throughout,1,
+West Virginia,Logan,None,5,Throughout,1,
+West Virginia,Mason,None,10,Throughout,2,
+West Virginia,McDowell,High,10,Throughout,1,
+West Virginia,Mineral,Low,10,Throughout,1,
+West Virginia,Mineral,None,10,Throughout,1,
+West Virginia,Mingo,High,10,Throughout,1,
+West Virginia,Mingo,None,10,Throughout,1,
+West Virginia,Monongalia,High,5,Southwestern,1,
+West Virginia,Morgan,None,10,Throughout,2,
+West Virginia,Pendleton,Low,7,Along  and around highway 220,1,
+West Virginia,Pocahontas,High,7,Throughout,1,
+West Virginia,Pocahontas,Low,5,South ,1,
+West Virginia,Putnam,None,5,Throughout,2,
+West Virginia,Wayne,None,10,Throughout,2,
+West Virginia,Webster,High,6,Throughout,1,
+West Virginia,Wetzel,High,10,Throughout,1,
+West Virginia,Wyoming,High,10,Throughout,1,
