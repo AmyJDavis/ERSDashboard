@@ -1,0 +1,481 @@
+---
+title: "Enhanced Rabies Surveillance Report for `r params$state`"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  bookdown::word_document2
+---
+
+
+```{r setup, include=FALSE,echo=FALSE}
+library(knitr)
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(patchwork)
+library(ggrepel)
+
+### Set the rabies states
+rabiestates=data.frame(StateName=state.name,StateAbb=state.abb)[c(1,7,8,10,17,19:21,22,24,29,30,32,33,35,38:40,42,45,46,48),]
+rabiestates$Fips=tidycensus::fips_codes[match(rabiestates$StateAbb,tidycensus::fips_codes$state),"state_code"]
+
+
+
+### County-tier information
+ctyorv=read_sf(file.path(getwd(),"ctyallERSv3cc.shp"))
+ctyorv=st_transform(ctyorv,crs="+proj=longlat +datum=WGS84")
+ctyorv$FIPS=paste0(ctyorv$STATEFP,ctyorv$COUNTYFP)
+
+## Get state 
+statmaps=sf::read_sf(file.path(getwd(),"states.shp"))
+
+rabiestates=rbind(rabiestates,c(" "," "," "))
+
+ersnames=data.frame(Code=1:6,Category=c("Strange Acting","Found Dead","Roadkill",
+                                   "Surveillance Trapped",
+                                   "NWCO/Other","Unknown"),
+                    Points=c(15,15,5,2,1,1))
+repst=params$state
+data<-params$df
+df=data|>
+  dplyr::select(DATE,IDNUMBER,LONGITUDE,LATITUDE,ERSCATEGORY,
+           Category,SPECIES,Points,DNASAMPLE,FATE,METHOD,SEX,
+           RELATIVEAGE,COUNTY,STATE,STCO,RABIESBRAINRESULTS)
+
+df=df[which(df$STATE==rabiestates[which(rabiestates$StateName==params$state),"StateAbb"]),]
+ctyorv1=ctyorv[ctyorv$STATE_NAME==params$state,]
+
+
+df=df[which(!is.na(df$LONGITUDE)),]
+erssf=st_as_sf(df,coords = c("LONGITUDE","LATITUDE"),crs=("+proj=longlat +datum=WGS84"))
+
+## Trying a join 
+sf_use_s2(FALSE)
+pwp=st_join(erssf,ctyorv1)
+## 
+pwp=pwp%>%
+  mutate(TierName=ifelse(is.na(Tier),"None",
+                    ifelse(Tier==1,"High","Low")),
+         CtyTier=paste(NAME,TierName,sep="-"),
+         StCtyTier=paste(STATE,CtyTier,sep="-"),
+         Points=replace_na(Points,0))
+
+## Summarizing data by county-tier designation
+NRMPcounty=pwp%>%st_drop_geometry%>%
+  group_by(StCtyTier)%>%
+  summarise(Pts=sum(Points))
+
+catdf=df%>%group_by(Category)%>%
+  summarise(TotalSamples=n(),
+            Pts=sum(Points))%>%ungroup()%>%
+  mutate(SamplePer=round(TotalSamples/sum(TotalSamples)*100,0),
+            PointPer=round(Pts/sum(Pts)*100,0))
+catdf$Category=factor(catdf$Category,ordered=TRUE,levels=ersnames$Category)
+
+
+## see what it looks like
+## ERS area by county tier information
+ctyorv1=ctyorv1%>%
+  mutate(StCtyTier=paste(STUSPS,CtyTier,sep="-"))
+ctypts=left_join(ctyorv1,NRMPcounty,by=c("StCtyTier"))
+ctypts=ctypts%>%
+  mutate(Pts=replace_na(Pts,0),
+         TierName=replace_na(TierName,"None"),
+         PtDiff=Pts-PTGoal,
+         PtLevs=ifelse(Tier==0,ifelse(Pts>0,-5,-4),
+                       ifelse(PtDiff<(-50),-3,
+                              ifelse(PtDiff<(-10),-2,
+                                     ifelse(PtDiff<0,-1,
+                                            ifelse(PtDiff==0,0,
+                                                   ifelse(PtDiff<10,1,
+                                                          ifelse(PtDiff<50,2,3))))))),
+         Pts_Needed=abs(pmin(0,PtDiff)),
+         Point_Levels=factor(ifelse(Tier==0,ifelse(Pts>0,"Bonus","No ERS"),
+                       ifelse(PtDiff<(-50),"Need 50+ points",
+                              ifelse(PtDiff<(-10),"Need 10+ points",
+                                     ifelse(PtDiff<0,"Need 1+ points",
+                                            ifelse(PtDiff==0,"Goal met",
+                                                   ifelse(PtDiff<10,"Good job",
+                                                          ifelse(PtDiff<50,"Great job","Awesome job!"))))))),
+                       ordered=TRUE,levels= c("Awesome job!","Great job","Good job",
+                                              "Goal met","Need 1+ points","Need 10+ points","Need 50+ points","No ERS","Bonus")))
+
+dast=ctypts%>%st_drop_geometry()%>%
+  dplyr::select(STATE_NAME,NAME,TierName,PTGoal,Pts,Pts_Needed)%>%
+      filter(Pts_Needed!=0)%>%
+      arrange(STATE_NAME,NAME,TierName)
+names(dast)=c("State","County","ERS_Tier","Point_Goal","Points","Points_Needed")
+
+
+    
+NRMPstate=ctypts%>%st_drop_geometry()%>%group_by(STATE_NAME)%>%
+  summarise(Points=sum(Pts,na.rm = TRUE),
+            Point_Goal=sum(PTGoal,na.rm = TRUE),
+            Points_Needed=as.character(ifelse(Point_Goal<=Points,"Goal met",
+                               as.numeric(Point_Goal-unlist(Points)))),
+            Counties=n(),
+            Ctys_Goal_Met=length(which(Pts_Needed==0&PTGoal>0)),
+            Ctys_Pts_Needed=length(which(Pts_Needed!=0)))
+
+catdf=df%>%
+  mutate(Points=ifelse(ERSCATEGORY==1,14,ifelse(ERSCATEGORY==2,20,
+                                                ifelse(ERSCATEGORY==3,4,1))),
+         Category=factor(Category,ordered=TRUE,levels=ersnames$Category))%>%
+  group_by(Category)%>%
+  summarise(TotalSamples=n(),
+            Pts=sum(Points),
+            .groups="drop")%>%
+  complete(Category,fill=list(TotalSamples=0,Pts=0))%>%ungroup()%>%
+  mutate(SamplePer=round(TotalSamples/sum(TotalSamples)*100,0),
+         PointPer=round(Pts/sum(Pts)*100,0))
+
+
+## Getting the plotting offsets
+df2 <- catdf %>% 
+  mutate(csum = rev(cumsum(rev(TotalSamples))), 
+         pos = TotalSamples/2 + lead(csum, 1),
+         pos = if_else(is.na(pos), TotalSamples/2, pos))
+df3 <- catdf %>% 
+  mutate(csum = rev(cumsum(rev(PointPer))), 
+         pos = PointPer/2 + lead(csum, 1),
+         pos = if_else(is.na(pos), PointPer/2, pos))
+
+totpie=ggplot(catdf, aes(x="",y=TotalSamples,fill=Category))+
+  geom_bar(width = 1, stat = "identity")+
+  coord_polar("y")+
+  theme_void() +
+  scale_fill_viridis_d(direction = -1,option="C")+
+  geom_label_repel(data = df2,
+                   aes(y = pos, label = TotalSamples),
+                   size = 4.5, nudge_x = 1, show.legend = FALSE,alpha = c(0.8)) +
+  theme(axis.text.x=element_blank())+
+  ggtitle("Samples")
+
+ptspie=ggplot(catdf, aes(x="",y=PointPer,fill=Category))+
+  geom_bar(width = 1, stat = "identity")+
+  geom_label_repel(data = df3,
+                   aes(y = pos, label = paste0(round(PointPer,1), "%")),
+                   size = 4.5, nudge_x = 1, show.legend = FALSE,alpha = c(0.8)) +
+  coord_polar("y")+
+  scale_fill_viridis_d(direction = -1,option="C")+
+  theme_void() +
+  theme(axis.text.x=element_blank())+
+  ggtitle("Points")
+
+
+## County evaluation plot for report
+ctyevalpl=ggplot()+
+  geom_sf(data=ctypts,aes(fill=Point_Levels),color="black", show.legend = TRUE)+
+  scale_fill_manual(values = c("Awesome job!"="#FECF49","Great job"="#FEED89",
+                               "Good job"="#FFF7E1","Goal met"="white",
+                               "Need 1+ points"="#7084E5",
+                               "Need 10+ points"="#5456AA","Need 50+ points"="#353264",
+                               "No ERS"="grey88","Bonus"="#034521"), drop = FALSE)+
+  theme_void()
+    
+
+
+
+### Bar charts for points met and points needed
+
+###
+### Getting and displaying the top five counties and the bottom five
+###
+sortcty=ctypts%>%st_drop_geometry()%>%
+  arrange(-PtDiff)%>%
+  mutate(Collected=pmin(PTGoal,Pts),
+         Needed=ifelse(PtDiff>0,0,abs(PtDiff)),
+         Above=pmax(0,PtDiff))%>%
+  dplyr::select(STATE_NAME,CtyTier,TierName,Collected,Needed,Above)
+
+
+### Take All counties and split them to show counties over in one plot and under in another
+abovecty=sortcty %>% filter(TierName!="None",Needed==0) %>% 
+  dplyr::select(-STATE_NAME,-TierName)%>%
+  pivot_longer(cols = -CtyTier,names_to = "Type",values_to = "Points")%>%
+  mutate(Type=factor(Type,ordered=TRUE,levels=c("Above","Needed","Collected")))
+abvpl=ggplot(abovecty,aes(x=reorder(CtyTier,Points),y=Points,fill=Type))+
+  geom_bar(position="stack", stat = "identity",)+
+  scale_fill_manual(values = c("#FECF49","#7084E5","black"),name="Progress towards goal")+
+  theme_classic()+ggtitle("Counties - point goals met")+
+  coord_flip()+xlab("County - ERS tier")
+
+belowcty=sortcty %>% filter(TierName!="None",Needed>0) %>% 
+  dplyr::select(-STATE_NAME,-TierName)%>%
+  pivot_longer(cols = -CtyTier,names_to = "Type",values_to = "Points")%>%
+  mutate(Type=factor(Type,ordered=TRUE,levels=c("Above","Needed","Collected")))
+blpl=ggplot(belowcty,aes(x=reorder(CtyTier,Points),y=Points,fill=Type))+
+  geom_bar(position="stack", stat = "identity",)+
+  scale_fill_manual(values = c("#FECF49","#7084E5","black"),name="Progress towards goal")+
+  theme_classic()+ggtitle("Counties - points needed")+
+  coord_flip()+xlab("County - ERS tier")
+
+
+############
+###
+### Genetic information
+###
+############
+
+### Matt's assessment
+mattgoal=read.csv(file.path(getwd(),"Raccoon genetic archive sampling counties 2025.csv"))
+
+### Needing to do a lot of fixing to make it have the same names as I need :(
+mattgoal$ST=state.abb[match(mattgoal$State,state.name)]
+mattgoal$StCtyTier=paste(mattgoal$ST,mattgoal$County,mattgoal$ERS_Tiers,sep="-")
+
+mattgoal=mattgoal|>dplyr::select(StCtyTier,Samples_needed,County_area,Priority,Notes)
+
+### Merge with ctyorv
+ctyorv1=left_join(ctyorv1,mattgoal,by="StCtyTier")
+
+
+### Get new genetic samples from the ERS data
+# Starting simple only DNASAMPLE==YES
+ersgen=df|>filter(DNASAMPLE=="YES",STATE==state.abb[which(state.name==repst)])|>
+  dplyr::select(DATE,STATE,COUNTY,LATITUDE,LONGITUDE,SPECIES,IDNUMBER,SEX,RELATIVEAGE,FATE,METHOD)|>
+  mutate(Sample="New")
+
+
+### Read in the data from Matt that has the genetic data up to 2024
+gen=read.csv(file.path(getwd(),"GeneticsDataFromMatt.csv"))
+gen=gen %>% filter(!is.na(LONGITUDE),LONGITUDE<0,SPECIES=="RACCOONS",
+                   STATE==state.abb[which(state.name==repst)]) %>% 
+  mutate(
+    DATE=as.POSIXct(DATE,format="%m/%d/%Y"),
+    FATE=" ",
+    METHOD=" ",
+    Sample="Archived"
+  )
+genc=rbind(gen,ersgen)
+
+
+###  Making up some goals and priority areas, but these will be provided by Matt
+gensf=st_as_sf(gen,coords=c("LONGITUDE","LATITUDE"),crs = (4326))
+ctygen=st_intersects(ctyorv1,gensf)
+ctyorv1$GenSampsArchived=sapply(ctygen,length)
+
+ersgensf=st_as_sf(ersgen,coords = c("LONGITUDE","LATITUDE"),crs=4326)
+ctyersgen=st_intersects(ctyorv1,ersgensf)
+ctyorv1$GenSampsNew=sapply(ctyersgen,length)
+
+
+###
+statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
+
+##
+## Trying to get an estimate of spatial coverage within a county area
+##
+gencsf=st_as_sf(genc,coords=c("LONGITUDE","LATITUDE"),crs=4326)
+genpts=st_join(gencsf,ctyorv1)
+genpts=st_transform(genpts,crs=3395)
+capoly=genpts|>
+  summarize() |>
+  st_buffer(dist=10000)
+
+## Cropping the buffered areas by county tier areas
+ctyorv1x=st_transform(ctyorv1,crs=3395)
+ctyorv1x <- st_make_valid(ctyorv1x)
+
+capc=st_intersection(ctyorv1x,capoly)
+capc=capc|>
+  mutate(GenArea=as.numeric(st_area(geometry)/1000^2))
+
+
+## Add genetic coverage data to ctyorv1
+ctyorv1$AreaKm=as.numeric(st_area(ctyorv1x$geometry)/1000^2)
+ctyorv1$GenCoverkm=capc$GenArea[match(ctyorv1$StCtyTier,capc$StCtyTier)]
+ctyorv1$GenAreaPerCover=ctyorv1$GenCoverkm/ctyorv1$AreaKm*100
+
+### Now creating a genetic evaluation 
+ctyorv1=ctyorv1|>
+  mutate(GenPriority=factor(ifelse(is.na(Priority),"No",
+                                   ifelse(Priority==1,"High","Low")),
+                            ordered=TRUE,levels=c("No","Low","High")),
+         Samples_needed=replace_na(Samples_needed,0),
+         Notes=replace_na(Notes," "),
+         GenAreaPerCover=replace_na(GenAreaPerCover,0),
+         GenSampDiff=pmax(0,Samples_needed-GenSampsNew),
+         GenLevel=factor(ifelse(Samples_needed==0&GenSampsArchived==0&GenSampsNew==0,"No new goal",
+                                ifelse(GenSampDiff==0,"Genetic goal met",
+                                       ifelse(GenSampDiff<10,"1+ samples needed","10+ samples needed"))),
+                         ordered=TRUE,levels=c("10+ samples needed","1+ samples needed",
+                                               "Genetic goal met","No new goal")),
+         GenPtLev=as.numeric(GenLevel))
+
+gencolors=c("#000004","#721F81","#F1605D","#FCFDBF")
+
+genmap=ggplot()+
+  geom_sf(data=ctyorv1,aes(fill=(GenLevel)),show.legend = TRUE)+
+  scale_fill_manual(values=rev(alpha(gencolors,0.7)),name="Status",drop=FALSE)+
+  geom_sf(data=gencsf,aes(color=Sample))+
+  scale_color_manual(values = c("black","red"))+
+  theme_void()
+
+
+gentab=ctyorv1|>
+  st_drop_geometry()|>
+  filter(GenLevel%in%c("10+ samples needed","1+ samples needed"))|>
+  mutate(Priority=ifelse(GenPriority=="High",1,2))|>
+  dplyr::select(NAME,TierName,Subset,GenSampsArchived,Priority,
+                              Samples_needed,GenSampsNew,GenLevel,Notes)|>
+  rename(County=NAME,Tier=TierName,Needed=Samples_needed,
+         New_samples=GenSampsNew,Status=GenLevel,Archived=GenSampsArchived)
+
+```
+
+# Executive summary
+
+### Protecting Public Health, Agriculture, and Wildlife
+In 2025, `r repst` wildlife rabies biologists and partners collected `r dim(df)[1]` Enhanced Rabies Surveillance (ERS) samples—part of a national effort to eliminate raccoon rabies, a variant that poses ongoing risks to people, pets, and livestock.
+
+So far this year:
+
+* `r length(which(df$RABIESBRAINRESULTS=="POSITIVE"))` rabies-positive animals have been detected from ERS this year.
+* The state has achieved `r NRMPstate$Points` ERS points toward a goal of `r NRMPstate$Point_Goal`, with `r NRMPstate$Ctys_Goal_Met` counties meeting their local sampling targets.
+* `r length(which(gen$Sample=="Archived"))` raccoon genetic samples are archived, and `r length(which(gen$Sample=="New"))` new samples have been added yet toward the 2025 goal of `r sum(ctyorv1$Samples_needed)`.
+
+### Why This Matters
+Rabies virus is a deadly zoonosis and the raccoon variant of rabies is found across the east coast of the United States. Rabies poses a significant public health risk. Additionally, where the raccoon variant of rabies circulates, there are higher rates of post-exposure prophylaxis and there are high numbers spillover rabies infections to domestic and wild mammals.
+
+ERS is a proactive approach that helps identify rabies distribution, target vaccination campaigns, inform the need for contingency actions, and protect communities. Each sample collected provides critical insight into disease risk and ensures that public health and wildlife resources are directed where they’re needed most.
+
+### Impact Through Collaboration
+ERS success relies on the dedication of field staff, partners, and local stakeholders. Every sample contributes to more informed and efficient rabies control—saving money, protecting wildlife, and bringing us closer to eliminating raccoon rabies.
+
+### Supporting Strategic Action
+Maps and charts in the full report show:
+
+* Which counties need more samples to meet goals.
+* The most valuable types of samples for rabies detection.
+* Gaps in genetic sampling, which supports tracking animal movement and preventing reintroduction of the virus.
+
+
+\newpage
+# Full report
+
+## Highlights `r format(Sys.time(),"%Y")` (year to date)
+* `r dim(df)[1]` ERS samples were collected in `r repst`.
+* `r length(which(df$RABIESBRAINRESULTS=="POSITIVE"))` samples were rabies positive.
+* `r repst` has collected samples worth `r NRMPstate$Points` points out of a target goal of `r NRMPstate$Point_Goal` points.
+* In terms of spatial coverage, there were `r NRMPstate$Ctys_Goal_Met` counties where the point goals were met. There were `r NRMPstate$Ctys_Pts_Needed` counties that need additional point to me the state goal.
+*  In support of the raccoon genetic archive, `r repst` has `r length(which(gen$Sample=="Archived"))` samples already in the genetic archive; and `r length(which(gen$Sample=="New"))` new genetic samples have been collected so far in `r format(Sys.time(),"%Y")` towards a goal of `r sum(ctyorv1$Samples_needed)` new genetic samples. 
+
+
+## The Importance of Enhanced Rabies Surveillance in Raccoon Rabies Management
+
+Rabies remains one of the most serious zoonotic diseases, posing grave risks to people, pets, livestock, and wildlife. Without treatment, rabies is nearly always fatal. In the United States, thousands of people require post-exposure prophylaxis (PEP) each year, and the financial burden of rabies is substantial.
+
+Raccoon rabies continues to present a persistent threat in much of the eastern United States. ERS is a cornerstone of the effort to eliminate this variant. Unlike passive surveillance—which relies on public reports—ERS targets high-value samples from animals more likely to carry the virus, such as those found dead or behaving abnormally. This strategic, boots-on-the-ground approach delivers actionable, high-quality data that guides vaccine deployment, helps detect potential outbreaks, and validates elimination success.
+
+Each sample collected represents time in the field, collaboration with partners, and a direct contribution to rabies control. By identifying the front lines of virus activity, ERS ensures that limited resources are deployed where they’ll have the greatest impact—protecting wildlife, agriculture, communities, and public health.
+
+
+
+
+## ERS Point Breakdown
+Different types of ERS samples provide varying levels of information about the potential presence of raccoon rabies. Higher-value categories (e.g., “strange acting” or “found dead”) offer greater likelihood of detecting the virus and therefore receive more points per sample (Table 1).
+
+Figures 1A and 1B provide a breakdown of sample effort (by count) and the distribution of ERS points (by value), helping biologists and managers assess the return on investment for different sampling strategies.
+ 
+It should be noted that additional ERS points can be gained by conducting formal road kill surveys. Road kill samples are worth 5 points each, but additionally 1 point can be gained for every 50 miles driven during a formalized road kill survey. The points from miles driven are not shown in this report and thus points may be higher than presented here. 
+
+```{r catpoints,echo=FALSE}
+knitr::kable(ersnames,caption="Table 1. ERS surveillance categories and associated points and ERS code.")
+
+```
+
+
+```{r piecharts, echo=FALSE,fig.height=5,fig.width=8,fig.cap="Figure 1. Distribution of ERS samples by A) count and B) points earned by category."}
+
+totpie + ptspie +
+  plot_layout(guides = "collect")+
+  plot_annotation(tag_levels = 'A')
+
+```
+
+
+
+## Spatial Coverage: Filling Gaps, Guiding Action
+
+While hitting numeric point goals is important, where those points are collected is also critical. High-density sampling in limited areas can leave blind spots in surveillance coverage—particularly in areas at the leading edge of rabies spread or adjacent to vaccination zones.
+
+Figure 2 highlights which counties have met or exceeded their ERS goals (white and gold), and where further sampling is needed (blue). Areas outside the official ERS priority region where sampling occurred are shown in dark green, underscoring the reach of local efforts.
+
+Broad spatial coverage ensures that ERS delivers robust insights into disease risk, enhances confidence in disease status across the landscape, and supports data-driven decisions about where to focus management interventions.
+
+
+
+
+```{r ctyeval, echo=FALSE,fig.height=8,fig.width=8,fig.cap="Figure 2. County evaluation map showing county areas where points goals are met or exceeded (white and gold colors) and county areas where more points are needed (blue colors). County areas outside of the ERS priority area where samples have been collected are shown in dark green."}
+
+ctyevalpl
+
+```
+
+
+To more explicitly demonstrate the county evaluations, Figure 3 shows the counties that need additional points (right side - if there are two figures) and the counties that have met or exceeded their point goals (left side - if there are two figures).  These plots show the specific points needed or exceeded, to help guide future surveillance efforts. 
+
+```{r ctyevalbars, echo=FALSE,fig.height=8,fig.width=8,fig.cap="Figure 3. County evaluation bar charts. If there are two columns, the left hand side shows the counties where the point goal was met or exceeded and the right hand side shows the counties where points are still needed. If no goals have been met, only the needs plot is shown. If all county goals are met only the goals met plot is shown. The plots are sorted with county with the most points collected or most points needed are on top."}
+
+if(dim(abovecty)[1]==0){
+  blpl
+}else{
+  if(dim(belowcty)[1]==0){
+    abvpl
+  }else{
+    (abvpl|blpl)+
+      plot_layout(guides = "collect")&
+      theme(legend.position='bottom')
+  }
+}
+
+```
+
+
+Table 2 also shows the needs and points collected information by county.  
+
+```{r, echo=FALSE}
+
+kable(dast,caption = "Table 2. Summary of point information by county. The point goal by county is based on the size and the amount of area that overlaps with the ERS high priority area. The points collected are shown and the points that are needed by county. If the points are met that is stated. Only counties that have ERS needs are shown.")
+```
+
+
+
+
+
+## The Role of Genetic Sampling in Rabies Control 
+
+In addition to ERS, genetic sampling strengthens our ability to manage raccoon rabies by revealing how raccoons move across the landscape. These movement patterns affect how the virus spreads—and how we must design our management against it.
+
+By analyzing genetic variation across raccoon populations, we can identify:
+
+* Natural movement corridors and connectivity between regions.
+* Potential dispersal barriers that may limit virus spread.
+* Evidence of translocated animals, which may indicate human-mediated movement—a major risk for reintroducing rabies into disease-free areas.
+
+These insights directly inform vaccination strategies, barrier placement, and response planning. Maintaining a strong, geographically distributed genetic archive is essential for detecting unexpected movement and ensuring our understanding of the system remains accurate and up to date.
+
+Figure 4 maps archived (black) and newly collected (red) genetic samples by location. Areas with little or no sampling can be prioritized to improve data quality. The visual tools and data provided here empower biologists to strategically expand and refine genetic sampling efforts.
+
+
+
+
+```{r geneticplot, echo=FALSE,fig.height=6,fig.width=8,fig.cap="Figure 4. Map showing the evaluation of the genetic samples by county. Genetic sampling locations are shown with archived points in black and new samples in red."}
+genmap
+
+```
+
+
+
+```{r, echo=FALSE}
+
+kable(gentab,caption = "Table 3. New genetic sampling goals (Needed) by county, number new samples collected, genetic priority level, and status with additional notes from Matt Hopken for guiding sampling efforts. Only counties where additional samples needed are shown. ")
+```
+
+
+
+## Closing Thoughts: Impact Through Action
+
+Every sample collected through ERS and genetic surveillance is a tangible act of disease prevention. Each point earned reflects a real effort by dedicated teams in the field—responding to calls, coordinating with partners, and often working in challenging conditions. This work directly contributes to eliminating raccoon rabies, reducing exposure risk, and protecting the health of communities and ecosystems.
+
+This report is designed to help biologists see where their efforts are making a difference—and where more work is needed. It’s also a tool to share with stakeholders, demonstrating the measurable, meaningful progress being made through collaborative, science-based rabies management.

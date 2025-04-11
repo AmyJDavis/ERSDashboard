@@ -2366,17 +2366,17 @@ server <- function(input, output,session) {
       # Copy the report file to a temporary directory before processing it, in
       # case we don't have write permissions to the current working dir (which
       # can happen when deployed).
-      tempReport <- file.path(tempdir(), "report2024.Rmd")
-      file.copy("report2024.Rmd", tempReport, overwrite = TRUE)
+      #tempReport <- file.path(tempdir(), "www/report2024.Rmd")
+      #file.copy("www/report2024.Rmd", tempReport, overwrite = TRUE)
       
       # Set up parameters to pass to Rmd document
       params <- list(df= ersdata,state=input$staten)
       
       # Dynamically select which report to generate depending on state selection
       rmd_file<-if(input$staten%in%ers_states){
-        "report2024.Rmd"
+        "www/report2024.Rmd"
       }else{
-        "NonERSreport.Rmd"
+        "www/NonERSreport.Rmd"
       }
       
       
@@ -2388,7 +2388,8 @@ server <- function(input, output,session) {
       progress <- shiny::Progress$new()
       progress$set(message = "Please be patient. This takes a few minutes... ")
       on.exit(progress$close())
-      out <- render(input=rmd_file,output_format= word_document(), params=params,output_file = "MyReport.doc",envir=new.env())
+      out <- render(input=rmd_file,output_format= word_document(), params=params,
+                    output_file = "MyReport.doc",envir=new.env())
       # })
       file.copy(out,file)
     }
