@@ -121,8 +121,8 @@ options(shiny.maxRequestSize = 30*1024^2)
 orv=read_sf("www/CY2023ORV_merged.shp")
 orv=st_transform(orv,crs=4326)
 
-orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
-st_crs(orvhatch)=4326
+#orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
+#st_crs(orvhatch)=4326
 
 # ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/ORV shapefiles/ctyorv.shp")
 ctyorv=read_sf("www/ctyallERSv3cc.shp",crs=4326)
@@ -139,11 +139,7 @@ names(ctyorv1b)=c("STATE_NAME","PTGoal", "StrageAct_Needed","FoundDead_Needed",
 
 
 ## Read in the current dataset 
-#ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
-## Read in the current dataset 
-#ersdata <- read_excel("www/2024 ERS_19Feb2025.xlsx",col_types = col_types)
-#ersdata <- read_excel("www/DummyERS_Feb2025.xlsx",col_types = col_types)
-ersdata <- read_excel("www/2025 USDA ERS Jan_Feb for Dashboard.xlsx",col_types = col_types)
+ersdata <- read_excel("www/ERS_data.xlsx",col_types = col_types)
 
 ## If the ERSCATEGORY has been left blank, this will take the information from the FREETEXT
 ersdata$ERSCATEGORY=ifelse(is.na(ersdata$ERSCATEGORY)|ersdata$ERSCATEGORY=="null",gsub("\\;.*","",ersdata$FREETEXT),ersdata$ERSCATEGORY)
@@ -334,7 +330,7 @@ oldstsum=ctyold %>%
 #########################
 
 ### Matt's assessment
-mattgoal=read.csv("www/Raccoon genetic archive sampling counties 2025.csv")
+mattgoal=read.csv("www/Raccoon_genetic_archive_sampling_counties_2025.csv")
 
 ### Needing to do a lot of fixing to make it have the same names as I need :(
 mattgoal$ST=state.abb[match(mattgoal$State,state.name)]
@@ -1097,7 +1093,7 @@ server <- function(input, output,session) {
       addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
       addPolygons(data=ctypts1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
       addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
-      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+      addPolygons(data = orv,color = "black",fillColor = "grey",
                   fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
                   fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
@@ -1450,7 +1446,7 @@ server <- function(input, output,session) {
       addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
       addPolygons(data=ctypts1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
       addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
-      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+      addPolygons(data = orv,color = "black",fillColor = "grey",
                   fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
                   fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
@@ -2212,7 +2208,7 @@ server <- function(input, output,session) {
       addProviderTiles("Esri.WorldImagery",group = "Esri.WorldImagery")%>%
       addPolygons(data=ctyorv1$geometry,color = "black",weight=0.7,fillOpacity = 0)%>%
       addPolygons(data=statmap1$geometry,color="black",fillColor = "grey",fillOpacity = 0,opacity = 1,weight = 0.2)%>%
-      addPolygons(data = orvhatch,color = "black",fillColor = "grey",
+      addPolygons(data = orv,color = "black",fillColor = "grey",
                   fillOpacity = 0.3,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
       addPolygons(data = orv$geometry,color = "black",fillColor = "grey",
                   fillOpacity = 0,opacity = 0.9,weight = 1.5,group="Show ORV")%>%
