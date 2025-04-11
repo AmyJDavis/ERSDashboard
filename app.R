@@ -120,14 +120,13 @@ options(shiny.maxRequestSize = 30*1024^2)
 ## Read in the ORV and Archived county ERS shapefiles
 orv=read_sf("www/CY2023ORV_merged.shp")
 orv=st_transform(orv,crs=4326)
-orv=orv %>% st_simplify()
 
 orvhatch <- HatchedPolygons::hatched.SpatialPolygons(orv, density = c(20), angle = c(45, 135))
 st_crs(orvhatch)=4326
 
 # ctyorv=read_sf("C:/Users/apamydavis/OneDrive - USDA/Documents/Rabies/ORV shapefiles/ctyorv.shp")
 ctyorv=read_sf("www/ctyallERSv3cc.shp",crs=4326)
-ctyorv=ctyorv %>% st_simplify()
+
 #ctyorv=st_transform(ctyorv,crs=4326)
 ctyorv$FIPS=paste0(ctyorv$STATEFP,ctyorv$COUNTYFP)
 ctyorv$HighPriority=rbinom(dim(ctyorv)[1],1,0.02)
@@ -380,7 +379,6 @@ ctyorv$GenSampsNew=sapply(ctyersgen,length)
 ###
 statmapsall=sf::read_sf("www/states.shp")
 statmapsall=st_transform(statmapsall,crs=4326)
-statmapsall=statmapsall %>% st_simplify()
 statmaps=statmapsall[which(statmapsall$STATE_FIPS%in%rabiestates$Fips),]
 statmap1=statmaps[which(statmaps$STATE_FIPS%in%rabiestates$Fips),]
 
