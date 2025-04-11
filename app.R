@@ -7,7 +7,7 @@
 ###   - This version include many tab options for beta testing
 ###
 ### Amy J Davis
-### June 6, 2024, updated February 25, 2025
+### June 6, 2024, updated April 11, 2025
 ###
 ########################################################################
 ########################################################################
@@ -34,14 +34,12 @@ library(shinyjs)
 library(shinycssloaders)
 library(shinydashboard)
 library(pwr)
-#library(shinyWidgets)
 library(hablar)
 library(sf)
 library(mapview)
 library(webshot2)
 library(KernSmooth)
 library(patchwork)
-require(tigris)
 library(bslib)
 library(ggrepel)
 library(plotly)
